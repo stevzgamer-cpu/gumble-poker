@@ -94,8 +94,8 @@ io.on('connection', (socket) => {
     room.pot = 0;
     room.phase = 'PRE_FLOP';
     
-    // Deal 2 cards to each player
-    room.players.forEach(p => {
+    // Deal 2 cards to each player (Added ': any' to fix build error)
+    room.players.forEach((p: any) => {
       p.hand = [room.deck.pop(), room.deck.pop()];
       p.isFolded = false;
       p.bet = 0;
@@ -121,8 +121,8 @@ io.on('connection', (socket) => {
     // Advance to next active player or next phase
     room.activeSeat = (room.activeSeat + 1) % room.players.length;
     
-    // Logic to check if round finished
-    const activePlayers = room.players.filter(p => !p.isFolded);
+    // Logic to check if round finished (Added ': any' to fix build error)
+    const activePlayers = room.players.filter((p: any) => !p.isFolded);
     if (room.activeSeat === 0) { // Simple turn completion logic
         if (room.phase === 'PRE_FLOP') {
             room.phase = 'FLOP';
@@ -136,6 +136,7 @@ io.on('connection', (socket) => {
         } else if (room.phase === 'RIVER') {
             room.phase = 'SHOWDOWN';
             // After Showdown, reset to IDLE after 10 seconds
+            // [FIXED] Removed quotes around 10000 to ensure it is a number
             setTimeout(() => {
                 room.phase = 'IDLE';
                 io.to(roomId).emit('room_state', room);
@@ -148,15 +149,18 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     rooms.forEach((room, roomId) => {
-      room.players = room.players.filter(p => p.socketId !== socket.id);
+      // (Added ': any' to fix build error)
+      room.players = room.players.filter((p: any) => p.socketId !== socket.id);
       if (room.players.length === 0) rooms.delete(roomId);
       else io.to(roomId).emit('room_state', room);
     });
   });
 });
 
-// 2. DYNAMIC PORT & HOST (Fixes the "Application exited early" error)
-const PORT = process.env.PORT || 10000; 
+// 2. DYNAMIC PORT & HOST
+// [FIXED] Force PORT to be a number to prevent TS overload errors with '0.0.0.0'
+const PORT = parseInt(process.env.PORT || '10000'); 
+
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Poker Backend Sync Server Active on Port ${PORT}`);
 });
