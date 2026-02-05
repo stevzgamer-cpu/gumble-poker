@@ -19,7 +19,8 @@ const SEAT_POSITIONS = [
 ];
 
 // Use environment variable with fallback for robust connectivity
-const SOCKET_URL = (import.meta as any).env?.VITE_API_URL || 
+// [FIX] Hardcode the Backend URL to ensure it connects on Render
+const SOCKET_URL = "https://gumble-backend.onrender.com"; 
                    (window.location.hostname === 'localhost' ? 'http://localhost:10000' : window.location.origin);
 
 interface PokerProps {
