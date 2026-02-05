@@ -1,15 +1,17 @@
-
 /**
  * GUMBLEVIP Production Backend Logic with Socket.IO Synchronization
  * Includes full Poker game loop handling.
  */
 
-/*
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import mongoose from 'mongoose';
 import cors from 'cors';
+import dotenv from 'dotenv';
+
+// Load Environment Variables
+dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
@@ -19,6 +21,12 @@ const io = new Server(httpServer, {
 
 app.use(express.json());
 app.use(cors());
+
+// 1. DATABASE CONNECTION (Critical for Render compatibility)
+const MONGO_URI = process.env.MONGO_URI || "";
+mongoose.connect(MONGO_URI)
+  .then(() => console.log("✅ Connected to MongoDB"))
+  .catch((err) => console.error("❌ MongoDB Connection Error:", err));
 
 // In-Memory Store for Active Poker Rooms
 const rooms = new Map<string, any>();
@@ -147,5 +155,8 @@ io.on('connection', (socket) => {
   });
 });
 
-httpServer.listen(3001, () => console.log('Poker Backend Sync Server Active'));
-*/
+// 2. DYNAMIC PORT & HOST (Fixes the "Application exited early" error)
+const PORT = process.env.PORT || 10000; 
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Poker Backend Sync Server Active on Port ${PORT}`);
+});
