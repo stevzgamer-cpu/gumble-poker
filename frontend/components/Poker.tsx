@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Card, GameOutcome, GameStatus, PokerPlayer, PokerRoom, User } from '../types';
+import { Card, GameOutcome, GameStatus, PokerPlayer, PokerRoom, User, ChatMessage } from '../types';
 import PokerLobby from './PokerLobby';
 
 declare const Hand: any;
@@ -10,14 +10,9 @@ const SEAT_POSITIONS = [
   { x: 50, y: 12 },  { x: 78, y: 20 },  { x: 90, y: 50 },  { x: 78, y: 80 },
 ];
 
-const getSocketUrl = () => {
-  const envUrl = (import.meta as any).env?.VITE_API_URL;
-  if (envUrl) return envUrl;
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return 'http://localhost:10000';
-  return window.location.origin;
-};
-
-const SOCKET_URL = getSocketUrl();
+// [FIX] HARDCODED BACKEND URL
+// This ensures the frontend looks for the server at the right place, not at 'localhost' or 'frontend-url'
+const SOCKET_URL = "https://gumble-backend.onrender.com";
 
 const PokerTable: React.FC<{ 
   user: User, 
@@ -31,22 +26,46 @@ const PokerTable: React.FC<{
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
+    // [FIX] Added connection options for stability
     const socket = io(SOCKET_URL, {
       auth: { token: user.email },
-      transports: ['websocket', 'polling']
-    } as any);
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      timeout: 10000, // Stop spinning after 10 seconds if server is dead
+    });
+    
     socketRef.current = socket;
 
-    socket.on('connect', () => socket.emit('join_room', { roomId, user }));
+    socket.on('connect', () => {
+      console.log("Connected to Poker Server!");
+      socket.emit('join_room', { roomId, user });
+    });
+
+    // [FIX] Handle Connection Errors so it doesn't spin forever
+    socket.on('connect_error', (err) => {
+        console.error("Connection Failed:", err);
+        alert("Cannot reach Game Server. Please check if the Backend is running.");
+        setIsLoading(false);
+        onNavigateToLobby();
+    });
+
     socket.on('room_state', (updatedRoom: PokerRoom) => {
       setRoom(updatedRoom);
-      setIsLoading(false);
+      setIsLoading(false); // Stop spinner when room data arrives
       if (updatedRoom.phase === 'SHOWDOWN') evaluateWinners(updatedRoom);
       else setWinnerMsg(null);
     });
-    socket.on('error', (msg: string) => { alert(msg); onNavigateToLobby(); });
 
-    return () => { socket.emit('leave_room', { roomId }); socket.disconnect(); };
+    socket.on('error', (msg: string) => { 
+        alert(msg); 
+        setIsLoading(false);
+        onNavigateToLobby(); 
+    });
+
+    return () => { 
+        socket.emit('leave_room', { roomId }); 
+        socket.disconnect(); 
+    };
   }, [roomId, user.email, onNavigateToLobby]);
 
   const evaluateWinners = (currentRoom: PokerRoom) => {
@@ -69,7 +88,12 @@ const PokerTable: React.FC<{
     } catch (e) { console.error(e); }
   };
 
-  if (isLoading) return <div className="h-full w-full flex items-center justify-center font-cinzel text-luxury-gold animate-pulse">Establishing Connection...</div>;
+  if (isLoading) return (
+    <div className="h-full w-full flex flex-col items-center justify-center gap-4">
+        <div className="w-16 h-16 border-4 border-luxury-gold/20 border-t-luxury-gold rounded-full animate-spin" />
+        <p className="font-cinzel text-luxury-gold animate-pulse tracking-widest">Connecting to Table...</p>
+    </div>
+  );
 
   const isMyTurn = room?.players[room.activeSeat]?.id === user.email && room.phase !== 'IDLE' && room.phase !== 'SHOWDOWN';
 
@@ -156,8 +180,9 @@ const PokerTable: React.FC<{
 
 const Poker: React.FC<{ user: User, onGameEnd: (o: GameOutcome) => void }> = ({ user, onGameEnd }) => {
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  if (activeRoomId) return <PokerTable user={user} onGameEnd={onGameEnd} roomId={activeRoomId} onNavigateToLobby={() => setActiveRoomId(null)} />;
-  return <PokerLobby onCreateRoom={() => setActiveRoomId(Math.random().toString(36).substring(2, 8).toUpperCase())} onJoinRoom={setActiveRoomId} />;
+  const handleCreateRoom = () => setActiveRoomId(Math.random().toString(36).substring(2, 8).toUpperCase());
+  const handleJoinRoom = (roomId: string) => setActiveRoomId(roomId);
+  return activeRoomId ? <PokerTable user={user} onGameEnd={onGameEnd} roomId={activeRoomId} onNavigateToLobby={() => setActiveRoomId(null)} /> : <PokerLobby onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />;
 };
 
 export default Poker;
