@@ -168,15 +168,11 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
   
   // Create a list of players with their "Visual Seat" calculated
   // If I am Seat 3, Visual Seat 0 = Seat 3. Visual Seat 1 = Seat 4, etc.
+  // This ROTATES the table so I am always at the bottom.
   const visualPlayers = room?.players.map(p => {
-    // If I'm not playing (spectator), just use actual seat.
-    // If I am playing, rotate so I am at index 0 (bottom).
     const shift = mySeatIndex === -1 ? 0 : mySeatIndex;
-    const totalSeats = 8; // Max capacity or SEAT_POSITIONS.length
-    
-    // Math to wrap around the circle
+    const totalSeats = 8; 
     let visualSeat = (p.seat - shift + totalSeats) % totalSeats;
-    
     return { ...p, visualSeat };
   });
 
@@ -208,8 +204,8 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
              </div>
           </div>
 
-          {/* Pot Display - [FIX] MOVED UP "Straight up the flop" */}
-          <div className="absolute top-[22%] left-1/2 -translate-x-1/2 flex flex-col items-center z-10">
+          {/* Pot Display - [FIX] Moved WAY UP to 18% to clear the cards */}
+          <div className="absolute top-[18%] left-1/2 -translate-x-1/2 flex flex-col items-center z-10">
               <span className="text-[1cqw] text-luxury-gold/60 font-black tracking-[0.3em] uppercase mb-1">Total Pot</span>
               <div className="bg-[#050505]/90 px-[4cqw] py-[0.8cqw] rounded-full border border-luxury-gold/50 text-luxury-gold font-cinzel font-bold text-[3.5cqw] shadow-[0_0_30px_rgba(212,175,55,0.2)]">
                   ${room?.pot.toLocaleString()}
@@ -221,8 +217,8 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
               )}
           </div>
 
-          {/* Community Cards - [FIX] Centered perfectly */}
-          <div className="absolute top-[45%] left-1/2 -translate-x-1/2 flex gap-[1cqw] z-10">
+          {/* Community Cards - [FIX] Moved UP to 38% to clear Player cards */}
+          <div className="absolute top-[38%] left-1/2 -translate-x-1/2 flex gap-[1cqw] z-10">
              {room?.communityCards.map((card, i) => (
                <div key={i} className="w-[8cqw] aspect-[2/3] rounded bg-white shadow-xl animate-in zoom-in duration-300">
                   <img src={card.image} className="w-full h-full object-cover rounded" alt="card" />
@@ -247,8 +243,8 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
                       
                       {player ? (
                           <div className={`relative w-full h-full flex flex-col items-center ${isActive ? 'scale-110 z-30' : 'z-20'}`}>
-                              {/* Cards - [FIX] MADE LARGER (w-7cqw) */}
-                              <div className="absolute -top-[50%] flex -space-x-[3.5cqw]">
+                              {/* Cards - [FIX] MADE LARGER (w-7cqw) and positioned closer to avatar */}
+                              <div className="absolute -top-[45%] flex -space-x-[3.5cqw]">
                                   {player.hand.length > 0 ? player.hand.map((c, idx) => (
                                       <div key={idx} className={`w-[7cqw] aspect-[2/3] bg-white rounded-lg shadow-2xl transition-transform ${player.isFolded ? 'opacity-40 grayscale' : ''}`}>
                                           <img src={(isMe || room?.phase === 'SHOWDOWN') ? c.image : 'https://deckofcardsapi.com/static/img/back.png'} className="w-full h-full rounded-lg object-cover" />
@@ -294,7 +290,7 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
           {/* Start Game Button */}
           {room?.phase === 'IDLE' && (
              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
-                <button onClick={handleStartGame} disabled={room.players.length < 2} className="px-8 py-3 bg-luxury-gold text-black font-cinzel font-black text-[2cqw] lg:text-xl rounded shadow-[0_0_30px_rgba(212,175,55,0.4)] hover:scale-105 transition-all disabled:opacity-50 disabled:grayscale">
+                <button onClick={handleStartGame} disabled={room.players.length < 2} className="px-8 py-3 bg-luxury-gold text-black font-cinzel font-black text-[2cqw] lg:text-xl rounded shadow-[0_0_30px_rgba(212,175,55,0.4)] hover:scale-105 transition-all disabled:opacity-50 disabled:grayscale cursor-pointer">
                    DEAL CARDS
                 </button>
              </div>
