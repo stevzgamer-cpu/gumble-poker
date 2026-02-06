@@ -1,5 +1,4 @@
-
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { GameOutcome, GameStatus } from '../types';
 
 interface MinesProps {
@@ -17,15 +16,11 @@ const Mines: React.FC<MinesProps> = ({ onGameEnd, balance }) => {
 
   const multiplier = useMemo(() => {
     if (revealed.length === 0) return 0;
-    
     const calculateMinesMultiplier = (tiles: number, mines: number, picked: number) => {
       let result = 1.0;
-      for (let i = 0; i < picked; i++) {
-        result *= (tiles - i) / (tiles - mines - i);
-      }
-      return parseFloat((result * 0.99).toFixed(2)); // 1% house edge
+      for (let i = 0; i < picked; i++) result *= (tiles - i) / (tiles - mines - i);
+      return parseFloat((result * 0.99).toFixed(2));
     };
-
     return calculateMinesMultiplier(25, minesCount, revealed.length);
   }, [revealed, minesCount]);
 
@@ -44,102 +39,86 @@ const Mines: React.FC<MinesProps> = ({ onGameEnd, balance }) => {
 
   const handleTileClick = (idx: number) => {
     if (!isPlaying || revealed.includes(idx) || gameOver) return;
-
     if (minesIndices.includes(idx)) {
       setGameOver(true);
       setIsPlaying(false);
-      onGameEnd({ status: GameStatus.LOST, amount: -bet, message: 'Boom! You hit a mine.' });
+      onGameEnd({ status: GameStatus.LOST, amount: -bet, message: 'Boom! Mine Hit.' });
     } else {
       const newRevealed = [...revealed, idx];
       setRevealed(newRevealed);
-      if (newRevealed.length === 25 - minesCount) {
-        // Automatic win if all gems found
-        handleCashout(newRevealed.length);
-      }
+      if (newRevealed.length === 25 - minesCount) handleCashout();
     }
   };
 
-  const handleCashout = (overrideRevealedCount?: number) => {
+  const handleCashout = () => {
     if (!isPlaying || revealed.length === 0) return;
-    
-    // Re-calculating to ensure accuracy at moment of cashout
     const finalMultiplier = multiplier;
     const winAmount = Math.floor(bet * (finalMultiplier - 1));
-    
     setIsPlaying(false);
     setGameOver(true);
-    onGameEnd({ status: GameStatus.WON, amount: winAmount, message: `Successfully cashed out at ${finalMultiplier}x!` });
+    onGameEnd({ status: GameStatus.WON, amount: winAmount, message: `Cashed out: $${winAmount.toLocaleString()}` });
   };
 
   return (
-    <div className="flex flex-col md:flex-row gap-8 items-start justify-center p-4">
-      {/* Settings Panel */}
-      <div className="w-full md:w-80 bg-[#121212] rounded-2xl p-6 border border-luxury-gold/20 flex flex-col gap-6 shadow-2xl">
-        <div>
-          <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-2 block">Bet Amount</label>
-          <input 
-            type="number" 
-            value={bet} 
-            onChange={(e) => setBet(Math.max(1, parseInt(e.target.value) || 0))}
-            disabled={isPlaying}
-            className="w-full bg-black border border-luxury-gold/40 text-luxury-gold px-4 py-3 rounded-lg font-bold focus:outline-none"
-          />
-        </div>
+    <div className="flex flex-col lg:flex-row items-center justify-center gap-8 p-4 lg:p-12 w-full max-w-6xl mx-auto h-full">
+      
+      {/* Controls Sidebar */}
+      <div className="w-full lg:w-80 bg-[#0a0a0a] border border-luxury-gold/20 rounded-[32px] p-8 flex flex-col gap-6 shadow-2xl relative overflow-hidden">
+         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-luxury-gold to-transparent opacity-50" />
+         
+         <div>
+            <label className="text-[10px] text-gray-500 font-bold uppercase tracking-widest block mb-2">Bet Amount</label>
+            <input type="number" value={bet} onChange={(e) => setBet(Number(e.target.value))} disabled={isPlaying} className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:border-luxury-gold outline-none" />
+         </div>
 
-        <div>
-          <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-2 block">Mines Count ({minesCount})</label>
-          <input 
-            type="range" 
-            min="1" 
-            max="24" 
-            value={minesCount} 
-            onChange={(e) => setMinesCount(parseInt(e.target.value))}
-            disabled={isPlaying}
-            className="w-full accent-luxury-gold cursor-pointer"
-          />
-        </div>
+         <div>
+            <label className="text-[10px] text-gray-500 font-bold uppercase tracking-widest block mb-2">Mines (1-24)</label>
+            <div className="flex items-center gap-4">
+               <input type="range" min="1" max="24" value={minesCount} onChange={(e) => setMinesCount(Number(e.target.value))} disabled={isPlaying} className="flex-1 accent-luxury-gold h-2 bg-white/10 rounded-lg appearance-none cursor-pointer" />
+               <span className="text-luxury-gold font-bold">{minesCount}</span>
+            </div>
+         </div>
 
-        {isPlaying ? (
-          <button 
-            onClick={() => handleCashout()}
-            disabled={revealed.length === 0}
-            className="w-full py-4 bg-luxury-gold text-luxury-black font-cinzel font-bold text-lg rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:grayscale"
-          >
-            CASHOUT {multiplier > 0 && `(${(bet * multiplier).toFixed(2)})`}
-          </button>
-        ) : (
-          <button 
-            onClick={startGame} 
-            className="w-full py-4 bg-luxury-gold text-luxury-black font-cinzel font-bold text-lg rounded-xl transition-all shadow-lg active:scale-95"
-          >
-            START GAME
-          </button>
-        )}
-      </div>
-
-      {/* Grid Panel */}
-      <div className="grid grid-cols-5 gap-2 md:gap-4 p-4 bg-luxury-black rounded-2xl border border-luxury-gold/10 shadow-2xl">
-        {Array.from({ length: 25 }).map((_, i) => {
-          const isRevealed = revealed.includes(i);
-          const isMine = minesIndices.includes(i);
-          const showMine = gameOver && isMine;
-
-          return (
-            <button
-              key={i}
-              onClick={() => handleTileClick(i)}
-              className={`w-14 h-14 md:w-20 md:h-20 rounded-xl transition-all duration-300 flex items-center justify-center text-3xl
-                ${isRevealed ? 'bg-luxury-gold/20 border border-luxury-gold/50 shadow-[inset_0_0_10px_rgba(212,175,55,0.3)]' : 
-                  showMine ? 'bg-red-900/50 border border-red-500' : 
-                  'bg-[#222] hover:bg-[#2a2a2a] border border-white/5 shadow-lg active:scale-90'}
-              `}
-            >
-              {isRevealed && <span className="drop-shadow-[0_0_8px_rgba(212,175,55,0.8)]">💎</span>}
-              {showMine && <span>💣</span>}
+         {isPlaying ? (
+            <button onClick={handleCashout} disabled={revealed.length === 0} className="w-full py-4 bg-green-600 text-white font-cinzel font-black text-xl rounded-xl shadow-lg hover:brightness-110 transition-all flex flex-col items-center">
+               <span>CASHOUT</span>
+               <span className="text-xs opacity-80">${(bet * multiplier).toFixed(0)} ({multiplier}x)</span>
             </button>
-          );
-        })}
+         ) : (
+            <button onClick={startGame} className="w-full py-4 bg-luxury-gold text-black font-cinzel font-black text-xl rounded-xl shadow-[0_0_20px_rgba(212,175,55,0.4)] hover:scale-105 transition-all">START</button>
+         )}
       </div>
+
+      {/* Grid */}
+      <div className="grid grid-cols-5 gap-3 p-4 bg-black/40 rounded-[32px] border border-white/5 backdrop-blur-sm shadow-2xl">
+         {Array.from({ length: 25 }).map((_, i) => {
+            const isRevealed = revealed.includes(i);
+            const isMine = minesIndices.includes(i);
+            const showMine = gameOver && isMine;
+            const isLostMine = showMine && !isRevealed && isPlaying === false; // The mine that killed you
+
+            return (
+               <button
+                  key={i}
+                  onClick={() => handleTileClick(i)}
+                  disabled={!isPlaying || isRevealed}
+                  className={`
+                     w-12 h-12 md:w-20 md:h-20 rounded-xl transition-all duration-300 flex items-center justify-center text-2xl
+                     ${isRevealed 
+                        ? 'bg-[#0f0f0f] border border-luxury-gold/50 shadow-[inset_0_0_10px_rgba(0,0,0,0.8)]' 
+                        : showMine 
+                           ? 'bg-red-900/80 border border-red-500 scale-90'
+                           : 'bg-[#1a1a1a] hover:bg-[#252525] border border-white/10 shadow-lg hover:-translate-y-1'
+                     }
+                  `}
+               >
+                  {isRevealed && <span className="animate-in zoom-in duration-300">💎</span>}
+                  {showMine && <span className="animate-in zoom-in duration-300">💣</span>}
+               </button>
+            );
+         })}
+      </div>
+
     </div>
   );
 };

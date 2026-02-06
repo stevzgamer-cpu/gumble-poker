@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, GameOutcome, GameStatus } from '../types';
 
 interface BlackjackProps {
@@ -11,9 +10,11 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
   const [deckId, setDeckId] = useState<string>('');
   const [playerHand, setPlayerHand] = useState<Card[]>([]);
   const [dealerHand, setDealerHand] = useState<Card[]>([]);
-  const [gameState, setGameState] = useState<'IDLE' | 'PLAYER_TURN' | 'DEALER_TURN' | 'FINISHED'>('IDLE');
+  const [gameState, setGameState] = useState<'IDLE' | 'PLAYER_TURN' | 'DEALER_TURN' | 'FINISHED' | 'INSURANCE'>('IDLE');
   const [bet, setBet] = useState(100);
+  const [betInput, setBetInput] = useState('100');
   const [isLoading, setIsLoading] = useState(false);
+  const [insuranceBet, setInsuranceBet] = useState(0);
 
   const calculateScore = (hand: Card[]) => {
     let score = 0;
@@ -23,7 +24,10 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
       else if (card.value === 'ACE') {
         score += 11;
         aces += 1;
-      } else score += parseInt(card.value);
+      } else {
+        const val = parseInt(card.value);
+        score += isNaN(val) ? 10 : val;
+      }
     });
     while (score > 21 && aces > 0) {
       score -= 10;
@@ -40,7 +44,13 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
   };
 
   const startGame = async () => {
-    if (balance < bet) return;
+    const finalBet = Math.max(10, parseInt(betInput) || 0);
+    if (balance < finalBet) {
+      alert("Insufficient balance.");
+      return;
+    }
+    setBet(finalBet);
+    setInsuranceBet(0);
     setIsLoading(true);
     let id = deckId;
     if (!id) id = await initDeck();
@@ -53,12 +63,30 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
 
     setPlayerHand(pHand);
     setDealerHand(dHand);
-    setGameState('PLAYER_TURN');
     setIsLoading(false);
 
-    if (calculateScore(pHand) === 21) {
-      handleStand(pHand, dHand);
+    const pScore = calculateScore(pHand);
+    
+    if (pScore === 21) {
+      setGameState('FINISHED');
+      onGameEnd({ status: GameStatus.WON, amount: Math.floor(finalBet * 1.5), message: 'BLACKJACK! Natural 21!' });
+      return;
     }
+
+    if (dHand[0].value === 'ACE') {
+      setGameState('INSURANCE');
+    } else {
+      setGameState('PLAYER_TURN');
+    }
+  };
+
+  const handleInsurance = (take: boolean) => {
+    if (take) {
+      const insAmount = bet / 2;
+      if (balance < bet + insAmount) return;
+      setInsuranceBet(insAmount);
+    }
+    setGameState('PLAYER_TURN');
   };
 
   const handleHit = async () => {
@@ -69,7 +97,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
     
     if (calculateScore(newHand) > 21) {
       setGameState('FINISHED');
-      onGameEnd({ status: GameStatus.LOST, amount: -bet, message: 'You busted!' });
+      onGameEnd({ status: GameStatus.LOST, amount: -bet - insuranceBet, message: 'Bust!' });
     }
   };
 
@@ -79,7 +107,15 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
     let dScore = calculateScore(currentDealerHand);
     const pScore = calculateScore(pHand);
 
+    // Insurance check
+    const isDealerBlackjack = dScore === 21 && currentDealerHand.length === 2;
+    let netInsuranceResult = 0;
+    if (insuranceBet > 0) {
+      netInsuranceResult = isDealerBlackjack ? insuranceBet * 2 : -insuranceBet;
+    }
+
     while (dScore < 17) {
+      await new Promise(r => setTimeout(r, 800)); // Delay for suspense
       const drawRes = await fetch(`https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1`);
       const drawData = await drawRes.json();
       currentDealerHand.push(drawData.cards[0]);
@@ -89,16 +125,16 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
 
     setGameState('FINISHED');
     if (dScore > 21 || pScore > dScore) {
-      onGameEnd({ status: GameStatus.WON, amount: bet, message: `Dealer had ${dScore}, you win!` });
+      onGameEnd({ status: GameStatus.WON, amount: bet + netInsuranceResult, message: `Dealer ${dScore}, You Win!` });
     } else if (pScore < dScore) {
-      onGameEnd({ status: GameStatus.LOST, amount: -bet, message: `Dealer had ${dScore}, you lose.` });
+      onGameEnd({ status: GameStatus.LOST, amount: -bet + netInsuranceResult, message: `Dealer ${dScore}, You Lose.` });
     } else {
-      onGameEnd({ status: GameStatus.DRAW, amount: 0, message: 'Push!' });
+      onGameEnd({ status: GameStatus.DRAW, amount: netInsuranceResult, message: 'Push.' });
     }
   };
 
   const handleDoubleDown = async () => {
-    if (balance < bet * 2) return;
+    if (balance < (bet * 2) + insuranceBet) return;
     const drawRes = await fetch(`https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1`);
     const drawData = await drawRes.json();
     const newHand = [...playerHand, drawData.cards[0]];
@@ -108,100 +144,112 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
 
     if (calculateScore(newHand) > 21) {
       setGameState('FINISHED');
-      onGameEnd({ status: GameStatus.LOST, amount: -oldBet * 2, message: 'Busted on double down!' });
+      onGameEnd({ status: GameStatus.LOST, amount: -(oldBet * 2) - insuranceBet, message: 'Busted on Double!' });
     } else {
       handleStand(newHand);
     }
   };
 
-  const renderCard = (card: Card, hidden = false) => (
-    <div className={`relative w-24 h-36 md:w-32 md:h-48 rounded-lg overflow-hidden border-2 border-luxury-gold/30 shadow-2xl transition-all duration-500 transform ${hidden ? 'rotate-y-180' : ''}`}>
-      {hidden ? (
-        <div className="w-full h-full bg-luxury-gold bg-[radial-gradient(circle_at_center,_#996515_0%,_#d4af37_100%)] flex items-center justify-center p-4">
-          <div className="w-full h-full border border-white/20 rounded flex items-center justify-center font-cinzel text-luxury-black text-4xl font-bold opacity-40">V</div>
-        </div>
-      ) : (
-        <img src={card.image} alt={card.code} className="w-full h-full object-cover" />
-      )}
-    </div>
-  );
-
   return (
-    <div className="flex flex-col gap-8 select-none">
-      <div className="flex flex-col gap-4">
-        <h3 className="text-gray-400 text-xs uppercase tracking-widest font-bold text-center">Dealer Hand ({gameState === 'PLAYER_TURN' ? '?' : calculateScore(dealerHand)})</h3>
-        <div className="flex justify-center gap-4 min-h-[144px] md:min-h-[192px]">
-          {dealerHand.map((card, i) => renderCard(card, i === 1 && gameState === 'PLAYER_TURN'))}
+    <div className="relative w-full h-full flex flex-col items-center justify-center p-2 lg:p-8 bg-[#0a0a0a] overflow-hidden">
+      
+      {/* Table Container */}
+      <div className="relative w-full max-w-6xl aspect-video bg-[#1a1a1a] rounded-[30px] lg:rounded-[100px] border-4 lg:border-8 border-luxury-gold/20 shadow-2xl flex items-center justify-center select-none">
+        
+        {/* Felt */}
+        <div className="absolute inset-2 lg:inset-4 rounded-[25px] lg:rounded-[90px] bg-[#0f3a20] shadow-[inset_0_0_50px_rgba(0,0,0,0.8)] border border-white/5 overflow-hidden">
+           <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/felt.png')] opacity-30 pointer-events-none" />
+           
+           {/* Logo */}
+           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-10 pointer-events-none">
+              <h1 className="font-cinzel text-[8vw] text-white font-bold tracking-tighter">BLACKJACK</h1>
+           </div>
         </div>
-      </div>
 
-      <div className="flex flex-col gap-4">
-        <h3 className="text-gray-400 text-xs uppercase tracking-widest font-bold text-center">Your Hand ({calculateScore(playerHand)})</h3>
-        <div className="flex justify-center gap-4 min-h-[144px] md:min-h-[192px]">
-          {playerHand.map(card => renderCard(card))}
-        </div>
-      </div>
-
-      <div className="bg-[#0f0f0f] p-6 rounded-2xl border border-luxury-gold/20 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl">
-        <div className="flex flex-col gap-1">
-          <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Bet Amount</label>
-          <div className="flex items-center gap-2">
-            <input 
-              type="number" 
-              value={bet} 
-              onChange={(e) => setBet(Math.max(10, parseInt(e.target.value) || 0))}
-              disabled={gameState !== 'IDLE' && gameState !== 'FINISHED'}
-              className="bg-black border border-luxury-gold/40 text-luxury-gold px-4 py-2 rounded-lg w-32 font-bold focus:outline-none focus:ring-1 focus:ring-luxury-gold"
-            />
-            <div className="flex gap-1">
-              {[10, 100, 500, 1000].map(val => (
-                <button 
-                  key={val} 
-                  onClick={() => setBet(val)}
-                  disabled={gameState !== 'IDLE' && gameState !== 'FINISHED'}
-                  className="px-2 py-1 text-[10px] border border-luxury-gold/20 rounded hover:bg-luxury-gold/10 transition-colors"
-                >
-                  {val}
-                </button>
+        {/* Dealer Hand (Top) */}
+        <div className="absolute top-[15%] flex flex-col items-center gap-2 z-10">
+           <span className="text-[10px] text-gray-400 font-bold tracking-widest uppercase">
+             Dealer {gameState !== 'IDLE' && `(${gameState === 'PLAYER_TURN' ? '?' : calculateScore(dealerHand)})`}
+           </span>
+           <div className="flex gap-2">
+              {dealerHand.map((card, i) => (
+                <div key={i} className="w-[6vw] lg:w-[4vw] aspect-[2/3] bg-white rounded shadow-xl relative">
+                   {(i === 1 && gameState === 'PLAYER_TURN') ? (
+                     <div className="w-full h-full bg-luxury-gold border border-white/20 rounded flex items-center justify-center">
+                       <span className="text-black font-cinzel font-bold">V</span>
+                     </div>
+                   ) : (
+                     <img src={card.image} className="w-full h-full object-cover rounded" />
+                   )}
+                </div>
               ))}
-            </div>
-          </div>
+              {dealerHand.length === 0 && <div className="w-[6vw] lg:w-[4vw] aspect-[2/3] border border-white/10 rounded bg-black/20" />}
+           </div>
         </div>
 
-        <div className="flex gap-4">
-          {gameState === 'IDLE' || gameState === 'FINISHED' ? (
-            <button 
-              onClick={startGame} 
-              disabled={isLoading}
-              className="px-12 py-3 bg-luxury-gold text-luxury-black font-cinzel font-bold text-lg rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg gold-glow"
-            >
-              DEAL HAND
-            </button>
-          ) : (
-            <div className="flex gap-2">
-              <button 
-                onClick={handleHit} 
-                className="px-8 py-3 bg-white/10 text-white font-bold rounded-xl hover:bg-white/20 transition-all border border-white/10"
-              >
-                HIT
-              </button>
-              <button 
-                onClick={() => handleStand()} 
-                className="px-8 py-3 bg-luxury-gold text-luxury-black font-bold rounded-xl hover:brightness-110 transition-all"
-              >
-                STAND
-              </button>
-              {playerHand.length === 2 && (
-                <button 
-                  onClick={handleDoubleDown} 
-                  className="px-8 py-3 border border-luxury-gold text-luxury-gold font-bold rounded-xl hover:bg-luxury-gold/10 transition-all"
-                >
-                  DOUBLE
-                </button>
-              )}
-            </div>
-          )}
+        {/* Player Hand (Bottom) */}
+        <div className="absolute bottom-[25%] flex flex-col items-center gap-2 z-10">
+           <div className="flex gap-2">
+              {playerHand.map((card, i) => (
+                <div key={i} className="w-[7vw] lg:w-[5vw] aspect-[2/3] bg-white rounded shadow-2xl animate-in slide-in-from-bottom-4">
+                   <img src={card.image} className="w-full h-full object-cover rounded" />
+                </div>
+              ))}
+              {playerHand.length === 0 && <div className="w-[7vw] lg:w-[5vw] aspect-[2/3] border border-white/10 rounded bg-black/20" />}
+           </div>
+           <span className="text-[10px] text-luxury-gold font-bold tracking-widest uppercase bg-black/50 px-3 py-1 rounded-full">
+             You {gameState !== 'IDLE' && `(${calculateScore(playerHand)})`}
+           </span>
         </div>
+
+        {/* Game Controls (Floating) */}
+        {gameState === 'PLAYER_TURN' && (
+           <div className="absolute bottom-[8%] flex gap-4 z-20">
+              <button onClick={handleHit} className="px-8 py-3 bg-luxury-gold text-black font-black rounded-xl shadow-lg hover:scale-105 active:scale-95 transition-all text-sm uppercase">HIT</button>
+              <button onClick={() => handleStand()} className="px-8 py-3 bg-white/10 text-white font-black rounded-xl border border-white/20 hover:bg-white/20 active:scale-95 transition-all text-sm uppercase">STAND</button>
+              {playerHand.length === 2 && (
+                <button onClick={handleDoubleDown} className="px-8 py-3 bg-black/50 text-luxury-gold border border-luxury-gold font-black rounded-xl hover:bg-black/70 active:scale-95 transition-all text-sm uppercase">DOUBLE</button>
+              )}
+           </div>
+        )}
+
+        {/* Insurance Overlay */}
+        {gameState === 'INSURANCE' && (
+           <div className="absolute inset-0 bg-black/60 z-30 flex items-center justify-center backdrop-blur-sm">
+              <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-luxury-gold flex flex-col items-center gap-4 shadow-2xl">
+                 <h2 className="text-luxury-gold font-cinzel text-xl">Insurance?</h2>
+                 <p className="text-gray-400 text-xs">Cost: ${bet/2}</p>
+                 <div className="flex gap-4">
+                    <button onClick={() => handleInsurance(true)} className="px-6 py-2 bg-luxury-gold text-black font-bold rounded">YES</button>
+                    <button onClick={() => handleInsurance(false)} className="px-6 py-2 border border-white/20 text-white font-bold rounded">NO</button>
+                 </div>
+              </div>
+           </div>
+        )}
+
+        {/* Start / Idle Screen */}
+        {(gameState === 'IDLE' || gameState === 'FINISHED') && (
+           <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center gap-6">
+              {/* Betting Controls */}
+              <div className="bg-[#0a0a0a] p-6 rounded-[24px] border border-luxury-gold/30 flex flex-col items-center gap-4 shadow-2xl">
+                 <div className="text-luxury-gold font-cinzel text-lg">PLACE BET</div>
+                 <div className="flex items-center gap-2">
+                    <button onClick={() => setBet(Math.max(10, bet - 10))} className="w-8 h-8 rounded bg-white/5 text-white hover:bg-white/10">-</button>
+                    <input 
+                      type="number" 
+                      value={betInput} 
+                      onChange={(e) => { setBetInput(e.target.value); setBet(parseInt(e.target.value)||0); }}
+                      className="bg-black border border-white/10 rounded px-4 py-2 text-center text-white w-32 focus:border-luxury-gold outline-none font-mono"
+                    />
+                    <button onClick={() => setBet(bet + 10)} className="w-8 h-8 rounded bg-white/5 text-white hover:bg-white/10">+</button>
+                 </div>
+                 <button onClick={startGame} disabled={isLoading} className="w-full py-3 bg-luxury-gold text-black font-bold rounded-xl hover:brightness-110 shadow-[0_0_20px_rgba(212,175,55,0.4)] transition-all uppercase tracking-widest">
+                    DEAL CARDS
+                 </button>
+              </div>
+           </div>
+        )}
+
       </div>
     </div>
   );
