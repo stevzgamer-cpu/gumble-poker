@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, GameOutcome, GameStatus } from '../types';
 
 interface BlackjackProps {
@@ -52,8 +52,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
     setBet(finalBet);
     setInsuranceBet(0);
     setIsLoading(true);
-    let id = deckId;
-    if (!id) id = await initDeck();
+    let id = deckId || await initDeck();
 
     const drawRes = await fetch(`https://deckofcardsapi.com/api/deck/${id}/draw/?count=4`);
     const drawData = await drawRes.json();
@@ -66,13 +65,20 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
     setIsLoading(false);
 
     const pScore = calculateScore(pHand);
-    
+    const dScore = calculateScore(dHand);
+
+    // Natural 21 Check
     if (pScore === 21) {
       setGameState('FINISHED');
-      onGameEnd({ status: GameStatus.WON, amount: Math.floor(finalBet * 1.5), message: 'BLACKJACK! Natural 21!' });
+      if (dScore === 21) {
+        onGameEnd({ status: GameStatus.DRAW, amount: 0, message: 'Both have Blackjack! Push.' });
+      } else {
+        onGameEnd({ status: GameStatus.WON, amount: Math.floor(finalBet * 1.5), message: 'BLACKJACK! Natural 21!' });
+      }
       return;
     }
 
+    // Insurance Offer if Dealer shows Ace
     if (dHand[0].value === 'ACE') {
       setGameState('INSURANCE');
     } else {
@@ -82,9 +88,13 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
 
   const handleInsurance = (take: boolean) => {
     if (take) {
-      const insAmount = bet / 2;
-      if (balance < bet + insAmount) return;
-      setInsuranceBet(insAmount);
+      const ins = bet / 2;
+      if (balance < bet + ins) {
+        alert("Insufficient balance for insurance.");
+        setGameState('PLAYER_TURN');
+        return;
+      }
+      setInsuranceBet(ins);
     }
     setGameState('PLAYER_TURN');
   };
@@ -97,153 +107,125 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
     
     if (calculateScore(newHand) > 21) {
       setGameState('FINISHED');
-      onGameEnd({ status: GameStatus.LOST, amount: -bet - insuranceBet, message: 'Bust!' });
+      onGameEnd({ status: GameStatus.LOST, amount: -bet - insuranceBet, message: 'Busted!' });
     }
   };
 
-  const handleStand = async (pHand = playerHand, dHand = dealerHand) => {
+  const handleStand = async (finalPHand = playerHand) => {
     setGameState('DEALER_TURN');
-    let currentDealerHand = [...dHand];
-    let dScore = calculateScore(currentDealerHand);
-    const pScore = calculateScore(pHand);
+    let currentDHand = [...dealerHand];
+    let dScore = calculateScore(currentDHand);
+    const pScore = calculateScore(finalPHand);
 
-    const isDealerBlackjack = dScore === 21 && currentDealerHand.length === 2;
-    let netInsuranceResult = 0;
+    // Dealer Blackjack Check for Insurance
+    const isDealerBJ = dScore === 21 && currentDHand.length === 2;
+    let insResult = 0;
     if (insuranceBet > 0) {
-      netInsuranceResult = isDealerBlackjack ? insuranceBet * 2 : -insuranceBet;
+      insResult = isDealerBJ ? insuranceBet * 2 : -insuranceBet;
     }
 
     while (dScore < 17) {
-      await new Promise(r => setTimeout(r, 800)); 
       const drawRes = await fetch(`https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1`);
       const drawData = await drawRes.json();
-      currentDealerHand.push(drawData.cards[0]);
-      dScore = calculateScore(currentDealerHand);
-      setDealerHand([...currentDealerHand]);
+      currentDHand.push(drawData.cards[0]);
+      dScore = calculateScore(currentDHand);
+      setDealerHand([...currentDHand]);
     }
 
     setGameState('FINISHED');
     if (dScore > 21 || pScore > dScore) {
-      onGameEnd({ status: GameStatus.WON, amount: bet + netInsuranceResult, message: `Dealer ${dScore}, You Win!` });
+      onGameEnd({ status: GameStatus.WON, amount: bet + insResult, message: `Dealer had ${dScore}, you win!` });
     } else if (pScore < dScore) {
-      onGameEnd({ status: GameStatus.LOST, amount: -bet + netInsuranceResult, message: `Dealer ${dScore}, You Lose.` });
+      onGameEnd({ status: GameStatus.LOST, amount: -bet + insResult, message: `Dealer had ${dScore}, you lose.` });
     } else {
-      onGameEnd({ status: GameStatus.DRAW, amount: netInsuranceResult, message: 'Push.' });
+      onGameEnd({ status: GameStatus.DRAW, amount: insResult, message: 'Push!' });
     }
   };
 
-  const handleDoubleDown = async () => {
+  const handleDouble = async () => {
     if (balance < (bet * 2) + insuranceBet) return;
     const drawRes = await fetch(`https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1`);
     const drawData = await drawRes.json();
     const newHand = [...playerHand, drawData.cards[0]];
     setPlayerHand(newHand);
-    const oldBet = bet;
-    setBet(oldBet * 2);
-
+    setBet(bet * 2);
     if (calculateScore(newHand) > 21) {
       setGameState('FINISHED');
-      onGameEnd({ status: GameStatus.LOST, amount: -(oldBet * 2) - insuranceBet, message: 'Busted on Double!' });
+      onGameEnd({ status: GameStatus.LOST, amount: -(bet * 2) - insuranceBet, message: 'Busted!' });
     } else {
       handleStand(newHand);
     }
   };
 
+  const renderCard = (card: Card, hidden = false) => (
+    <div className={`relative w-16 h-24 md:w-28 md:h-40 rounded-lg overflow-hidden border border-luxury-gold/30 shadow-xl transition-all duration-500 transform ${hidden ? 'rotate-y-180' : ''}`}>
+      {hidden ? (
+        <div className="w-full h-full bg-luxury-gold bg-[radial-gradient(circle_at_center,_#996515_0%,_#d4af37_100%)] flex items-center justify-center">
+          <div className="w-full h-full border border-white/10 m-1 rounded flex items-center justify-center font-cinzel text-luxury-black text-2xl opacity-30">VIP</div>
+        </div>
+      ) : (
+        <img src={card.image} alt={card.code} className="w-full h-full object-cover" />
+      )}
+    </div>
+  );
+
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-center p-2 lg:p-8 bg-[#0a0a0a] overflow-hidden">
-      <div className="relative w-full max-w-7xl aspect-video bg-[#1a1a1a] rounded-[30px] lg:rounded-[150px] border-4 lg:border-8 border-luxury-gold/20 shadow-2xl flex items-center justify-center select-none">
-        
-        {/* Felt */}
-        <div className="absolute inset-2 lg:inset-4 rounded-[25px] lg:rounded-[140px] bg-[#0f3a20] shadow-[inset_0_0_50px_rgba(0,0,0,0.8)] border border-white/5 overflow-hidden">
-           <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/felt.png')] opacity-30 pointer-events-none" />
-           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-10 pointer-events-none">
-              <h1 className="font-cinzel text-[8vw] text-white font-bold tracking-tighter">BLACKJACK</h1>
-           </div>
+    <div className="flex flex-col gap-6 w-full max-w-5xl mx-auto px-4 py-8">
+      <div className="flex flex-col gap-2">
+        <p className="text-gray-500 text-[10px] uppercase tracking-widest font-black text-center">Dealer: {gameState === 'PLAYER_TURN' || gameState === 'INSURANCE' ? '?' : calculateScore(dealerHand)}</p>
+        <div className="flex justify-center gap-2 md:gap-4 h-24 md:h-40">
+          {dealerHand.map((c, i) => renderCard(c, i === 1 && (gameState === 'PLAYER_TURN' || gameState === 'INSURANCE')))}
         </div>
+      </div>
 
-        {/* Dealer Hand - Scaled Up */}
-        <div className="absolute top-[20%] flex flex-col items-center gap-3 z-10">
-           <span className="text-xs md:text-lg text-gray-200 font-bold tracking-widest uppercase bg-black/40 px-4 py-1 rounded-full">
-             Dealer {gameState !== 'IDLE' && `(${gameState === 'PLAYER_TURN' ? '?' : calculateScore(dealerHand)})`}
-           </span>
-           <div className="flex gap-3">
-              {dealerHand.map((card, i) => (
-                <div key={i} className="w-[12vw] max-w-[120px] aspect-[2/3] bg-white rounded-lg shadow-2xl relative">
-                   {(i === 1 && gameState === 'PLAYER_TURN') ? (
-                     <div className="w-full h-full bg-luxury-gold border border-white/20 rounded-lg flex items-center justify-center">
-                       <span className="text-black font-cinzel font-bold text-2xl">V</span>
-                     </div>
-                   ) : (
-                     <img src={card.image} className="w-full h-full object-cover rounded-lg" />
-                   )}
-                </div>
-              ))}
-              {dealerHand.length === 0 && <div className="w-[12vw] max-w-[120px] aspect-[2/3] border border-white/10 rounded-lg bg-black/20" />}
-           </div>
+      {gameState === 'INSURANCE' && (
+        <div className="bg-luxury-gold/5 border border-luxury-gold/30 p-6 rounded-2xl flex flex-col items-center gap-4 animate-in fade-in zoom-in">
+          <p className="text-luxury-gold font-cinzel text-lg font-bold uppercase tracking-widest">Insurance Offered</p>
+          <p className="text-white/40 text-[10px] text-center uppercase tracking-wider">Dealer shows an Ace. Bet ${bet / 2} for 2:1 payout if dealer has Blackjack.</p>
+          <div className="flex gap-4 w-full max-w-xs">
+            <button onClick={() => handleInsurance(true)} className="flex-1 py-3 bg-luxury-gold text-luxury-black font-bold rounded-xl hover:brightness-110">YES</button>
+            <button onClick={() => handleInsurance(false)} className="flex-1 py-3 border border-luxury-gold text-luxury-gold font-bold rounded-xl hover:bg-luxury-gold/10">NO</button>
+          </div>
         </div>
+      )}
 
-        {/* Player Hand - Scaled Up */}
-        <div className="absolute top-[60%] flex flex-col items-center gap-3 z-10">
-           <div className="flex gap-3">
-              {playerHand.map((card, i) => (
-                <div key={i} className="w-[13vw] max-w-[130px] aspect-[2/3] bg-white rounded-lg shadow-2xl animate-in slide-in-from-bottom-4">
-                   <img src={card.image} className="w-full h-full object-cover rounded-lg" />
-                </div>
-              ))}
-              {playerHand.length === 0 && <div className="w-[13vw] max-w-[130px] aspect-[2/3] border border-white/10 rounded-lg bg-black/20" />}
-           </div>
-           <span className="text-xs md:text-lg text-luxury-gold font-bold tracking-widest uppercase bg-black/60 px-6 py-2 rounded-full border border-luxury-gold/30 mt-2">
-             You {gameState !== 'IDLE' && `(${calculateScore(playerHand)})`}
-           </span>
+      <div className="flex flex-col gap-2">
+        <p className="text-gray-500 text-[10px] uppercase tracking-widest font-black text-center">Player: {calculateScore(playerHand)}</p>
+        <div className="flex justify-center gap-2 md:gap-4 h-24 md:h-40">
+          {playerHand.map(c => renderCard(c))}
         </div>
+      </div>
 
-        {/* Controls */}
-        {gameState === 'PLAYER_TURN' && (
-           <div className="absolute bottom-[8%] flex gap-4 z-20 w-full justify-center">
-              <button onClick={handleHit} className="px-8 py-4 bg-luxury-gold text-black font-black rounded-2xl shadow-xl hover:scale-105 active:scale-95 transition-all text-sm md:text-lg uppercase tracking-wider">HIT</button>
-              <button onClick={() => handleStand()} className="px-8 py-4 bg-white/10 text-white font-black rounded-2xl border border-white/20 hover:bg-white/20 active:scale-95 transition-all text-sm md:text-lg uppercase tracking-wider">STAND</button>
-              {playerHand.length === 2 && (
-                <button onClick={handleDoubleDown} className="px-8 py-4 bg-black/50 text-luxury-gold border border-luxury-gold font-black rounded-2xl hover:bg-black/70 active:scale-95 transition-all text-sm md:text-lg uppercase tracking-wider">DOUBLE</button>
-              )}
-           </div>
-        )}
-
-        {/* Insurance */}
-        {gameState === 'INSURANCE' && (
-           <div className="absolute inset-0 bg-black/60 z-30 flex items-center justify-center backdrop-blur-sm">
-              <div className="bg-[#1a1a1a] p-8 rounded-[32px] border border-luxury-gold flex flex-col items-center gap-6 shadow-2xl">
-                 <h2 className="text-luxury-gold font-cinzel text-2xl">Insurance?</h2>
-                 <p className="text-gray-400 text-sm">Cost: ${bet/2}</p>
-                 <div className="flex gap-4">
-                    <button onClick={() => handleInsurance(true)} className="px-8 py-3 bg-luxury-gold text-black font-bold rounded-xl">YES</button>
-                    <button onClick={() => handleInsurance(false)} className="px-8 py-3 border border-white/20 text-white font-bold rounded-xl">NO</button>
-                 </div>
+      <div className="bg-[#0a0a0a] p-4 md:p-8 rounded-[32px] border border-white/5 shadow-2xl flex flex-col items-center gap-6">
+        <div className="flex flex-col md:flex-row items-center gap-6 w-full justify-between">
+          <div className="flex flex-col gap-1 w-full md:w-auto">
+            <label className="text-[9px] text-gray-500 uppercase tracking-widest font-black">Wager</label>
+            <div className="flex items-center gap-2">
+              <input 
+                type="number" value={betInput} onChange={e => setBetInput(e.target.value)}
+                disabled={gameState !== 'IDLE' && gameState !== 'FINISHED'}
+                className="bg-black border border-luxury-gold/40 text-luxury-gold px-4 py-3 rounded-xl w-full md:w-32 font-bold focus:outline-none"
+              />
+              <div className="flex gap-1">
+                {[50, 100, 500].map(v => (
+                  <button key={v} onClick={() => setBetInput(v.toString())} disabled={gameState !== 'IDLE' && gameState !== 'FINISHED'} className="px-2 py-3 text-[10px] bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 font-bold">+{v}</button>
+                ))}
               </div>
-           </div>
-        )}
+            </div>
+          </div>
 
-        {/* Betting */}
-        {(gameState === 'IDLE' || gameState === 'FINISHED') && (
-           <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center gap-6">
-              <div className="bg-[#0a0a0a] p-8 rounded-[32px] border border-luxury-gold/30 flex flex-col items-center gap-6 shadow-[0_0_60px_rgba(0,0,0,0.8)]">
-                 <div className="text-luxury-gold font-cinzel text-2xl tracking-[0.2em]">PLACE BET</div>
-                 <div className="flex items-center gap-4">
-                    <button onClick={() => setBet(Math.max(10, bet - 10))} className="w-10 h-10 rounded-full bg-white/5 text-white hover:bg-white/10 text-xl font-bold">-</button>
-                    <input 
-                      type="number" 
-                      value={betInput} 
-                      onChange={(e) => { setBetInput(e.target.value); setBet(parseInt(e.target.value)||0); }}
-                      className="bg-black border border-white/10 rounded-xl px-6 py-3 text-center text-white w-40 text-xl focus:border-luxury-gold outline-none font-mono"
-                    />
-                    <button onClick={() => setBet(bet + 10)} className="w-10 h-10 rounded-full bg-white/5 text-white hover:bg-white/10 text-xl font-bold">+</button>
-                 </div>
-                 <button onClick={startGame} disabled={isLoading} className="w-full py-4 bg-luxury-gold text-black font-black text-xl rounded-2xl hover:brightness-110 shadow-[0_0_30px_rgba(212,175,55,0.4)] transition-all uppercase tracking-widest">
-                    DEAL CARDS
-                 </button>
+          <div className="flex gap-3 w-full md:w-auto">
+            {gameState === 'IDLE' || gameState === 'FINISHED' ? (
+              <button onClick={startGame} disabled={isLoading} className="flex-1 md:px-12 py-4 bg-luxury-gold text-luxury-black font-cinzel font-bold text-lg rounded-2xl shadow-lg gold-glow hover:scale-105 transition-all">DEAL</button>
+            ) : gameState === 'PLAYER_TURN' ? (
+              <div className="flex gap-2 w-full">
+                <button onClick={handleHit} className="flex-1 md:px-8 py-4 bg-white/5 border border-white/10 text-white font-bold rounded-xl hover:bg-white/10">HIT</button>
+                <button onClick={() => handleStand()} className="flex-1 md:px-8 py-4 bg-luxury-gold text-luxury-black font-bold rounded-xl hover:brightness-110">STAND</button>
+                {playerHand.length === 2 && <button onClick={handleDouble} className="flex-1 md:px-8 py-4 border border-luxury-gold text-luxury-gold font-bold rounded-xl hover:bg-luxury-gold/5">DOUBLE</button>}
               </div>
-           </div>
-        )}
-
+            ) : null}
+          </div>
+        </div>
       </div>
     </div>
   );
