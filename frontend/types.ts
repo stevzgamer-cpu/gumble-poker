@@ -1,4 +1,3 @@
-
 export enum GameType {
   BLACKJACK = 'BLACKJACK',
   MINES = 'MINES',
@@ -64,5 +63,5 @@ export interface PokerRoom {
   activeSeat: number;
   minBuyIn: number;
   messages: ChatMessage[];
-  /* Added currentBet to PokerRoom interface to resolve property access error in components/Poker.tsx */
   currentBet: number;
+}
