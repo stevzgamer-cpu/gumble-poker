@@ -66,10 +66,16 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
     setIsLoading(false);
 
     const pScore = calculateScore(pHand);
-    
+    const dScore = calculateScore(dHand);
+
+    // Check for Natural 21
     if (pScore === 21) {
       setGameState('FINISHED');
-      onGameEnd({ status: GameStatus.WON, amount: Math.floor(finalBet * 1.5), message: 'BLACKJACK! Natural 21!' });
+      if (dScore === 21) {
+         onGameEnd({ status: GameStatus.DRAW, amount: 0, message: 'Push! Both have Blackjack.' });
+      } else {
+         onGameEnd({ status: GameStatus.WON, amount: Math.floor(finalBet * 1.5), message: 'BLACKJACK! Natural 21!' });
+      }
       return;
     }
 
@@ -107,7 +113,6 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
     let dScore = calculateScore(currentDealerHand);
     const pScore = calculateScore(pHand);
 
-    // Insurance check
     const isDealerBlackjack = dScore === 21 && currentDealerHand.length === 2;
     let netInsuranceResult = 0;
     if (insuranceBet > 0) {
@@ -115,7 +120,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
     }
 
     while (dScore < 17) {
-      await new Promise(r => setTimeout(r, 800)); // Delay for suspense
+      await new Promise(r => setTimeout(r, 800)); 
       const drawRes = await fetch(`https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1`);
       const drawData = await drawRes.json();
       currentDealerHand.push(drawData.cards[0]);
@@ -159,21 +164,19 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
         {/* Felt */}
         <div className="absolute inset-2 lg:inset-4 rounded-[25px] lg:rounded-[90px] bg-[#0f3a20] shadow-[inset_0_0_50px_rgba(0,0,0,0.8)] border border-white/5 overflow-hidden">
            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/felt.png')] opacity-30 pointer-events-none" />
-           
-           {/* Logo */}
            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-10 pointer-events-none">
               <h1 className="font-cinzel text-[8vw] text-white font-bold tracking-tighter">BLACKJACK</h1>
            </div>
         </div>
 
-        {/* Dealer Hand (Top) */}
-        <div className="absolute top-[15%] flex flex-col items-center gap-2 z-10">
+        {/* Dealer Hand */}
+        <div className="absolute top-[20%] flex flex-col items-center gap-2 z-10">
            <span className="text-[10px] text-gray-400 font-bold tracking-widest uppercase">
              Dealer {gameState !== 'IDLE' && `(${gameState === 'PLAYER_TURN' ? '?' : calculateScore(dealerHand)})`}
            </span>
            <div className="flex gap-2">
               {dealerHand.map((card, i) => (
-                <div key={i} className="w-[6vw] lg:w-[4vw] aspect-[2/3] bg-white rounded shadow-xl relative">
+                <div key={i} className="w-[8%] aspect-[2/3] max-w-[60px] bg-white rounded shadow-xl relative">
                    {(i === 1 && gameState === 'PLAYER_TURN') ? (
                      <div className="w-full h-full bg-luxury-gold border border-white/20 rounded flex items-center justify-center">
                        <span className="text-black font-cinzel font-bold">V</span>
@@ -183,26 +186,26 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
                    )}
                 </div>
               ))}
-              {dealerHand.length === 0 && <div className="w-[6vw] lg:w-[4vw] aspect-[2/3] border border-white/10 rounded bg-black/20" />}
+              {dealerHand.length === 0 && <div className="w-[8%] aspect-[2/3] max-w-[60px] border border-white/10 rounded bg-black/20" />}
            </div>
         </div>
 
-        {/* Player Hand (Bottom) */}
-        <div className="absolute bottom-[25%] flex flex-col items-center gap-2 z-10">
+        {/* Player Hand */}
+        <div className="absolute top-[65%] flex flex-col items-center gap-2 z-10">
            <div className="flex gap-2">
               {playerHand.map((card, i) => (
-                <div key={i} className="w-[7vw] lg:w-[5vw] aspect-[2/3] bg-white rounded shadow-2xl animate-in slide-in-from-bottom-4">
+                <div key={i} className="w-[9%] aspect-[2/3] max-w-[70px] bg-white rounded shadow-2xl animate-in slide-in-from-bottom-4">
                    <img src={card.image} className="w-full h-full object-cover rounded" />
                 </div>
               ))}
-              {playerHand.length === 0 && <div className="w-[7vw] lg:w-[5vw] aspect-[2/3] border border-white/10 rounded bg-black/20" />}
+              {playerHand.length === 0 && <div className="w-[9%] aspect-[2/3] max-w-[70px] border border-white/10 rounded bg-black/20" />}
            </div>
-           <span className="text-[10px] text-luxury-gold font-bold tracking-widest uppercase bg-black/50 px-3 py-1 rounded-full">
+           <span className="text-[10px] text-luxury-gold font-bold tracking-widest uppercase bg-black/50 px-3 py-1 rounded-full border border-white/10">
              You {gameState !== 'IDLE' && `(${calculateScore(playerHand)})`}
            </span>
         </div>
 
-        {/* Game Controls (Floating) */}
+        {/* Controls */}
         {gameState === 'PLAYER_TURN' && (
            <div className="absolute bottom-[8%] flex gap-4 z-20">
               <button onClick={handleHit} className="px-8 py-3 bg-luxury-gold text-black font-black rounded-xl shadow-lg hover:scale-105 active:scale-95 transition-all text-sm uppercase">HIT</button>
@@ -227,10 +230,9 @@ const Blackjack: React.FC<BlackjackProps> = ({ onGameEnd, balance }) => {
            </div>
         )}
 
-        {/* Start / Idle Screen */}
+        {/* Betting Screen */}
         {(gameState === 'IDLE' || gameState === 'FINISHED') && (
            <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center gap-6">
-              {/* Betting Controls */}
               <div className="bg-[#0a0a0a] p-6 rounded-[24px] border border-luxury-gold/30 flex flex-col items-center gap-4 shadow-2xl">
                  <div className="text-luxury-gold font-cinzel text-lg">PLACE BET</div>
                  <div className="flex items-center gap-2">

@@ -95,7 +95,6 @@ const Mines: React.FC<MinesProps> = ({ onGameEnd, balance }) => {
             const isRevealed = revealed.includes(i);
             const isMine = minesIndices.includes(i);
             const showMine = gameOver && isMine;
-            const isLostMine = showMine && !isRevealed && isPlaying === false; // The mine that killed you
 
             return (
                <button

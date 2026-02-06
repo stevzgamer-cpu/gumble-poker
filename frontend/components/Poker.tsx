@@ -6,8 +6,14 @@ import PokerLobby from './PokerLobby';
 declare const Hand: any;
 
 const SEAT_POSITIONS = [
-  { x: 50, y: 88 }, { x: 15, y: 75 }, { x: 5, y: 50 }, { x: 15, y: 25 },
-  { x: 50, y: 12 }, { x: 85, y: 25 }, { x: 95, y: 50 }, { x: 85, y: 75 },
+  { x: 50, y: 88 },  // 0: Bottom (You)
+  { x: 15, y: 75 },  // 1: Bottom Left
+  { x: 5, y: 50 },   // 2: Left
+  { x: 15, y: 25 },  // 3: Top Left
+  { x: 50, y: 12 },  // 4: Top
+  { x: 85, y: 25 },  // 5: Top Right
+  { x: 95, y: 50 },  // 6: Right
+  { x: 85, y: 75 },  // 7: Bottom Right
 ];
 
 const SOCKET_URL = "https://gumble-backend.onrender.com";
@@ -48,6 +54,10 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
     return () => { socket.disconnect(); };
   }, [roomId, user.email, onNavigateToLobby]);
 
+  useEffect(() => {
+    if(showMobileChat) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, showMobileChat]);
+
   const evaluateWinners = (currentRoom: PokerRoom) => {
     try {
       if (typeof Hand === 'undefined') return;
@@ -69,6 +79,13 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
 
   const handleAction = (type: 'FOLD' | 'CHECK' | 'CALL' | 'RAISE', amount = 0) => {
     socketRef.current?.emit('player_action', { roomId, action: { type, amount } });
+  };
+
+  const handleInvite = () => {
+    const url = `${window.location.origin}/#/table/${roomId}`;
+    navigator.clipboard.writeText(url);
+    setInviteStatus('COPIED');
+    setTimeout(() => setInviteStatus('IDLE'), 2000);
   };
 
   const getMySeatIndex = () => {
@@ -101,6 +118,7 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
              <button onClick={onNavigateToLobby} className="bg-red-900/50 px-3 py-1 rounded-full border border-red-500/20 text-[10px] md:text-xs text-red-200 uppercase font-bold hover:bg-red-900 shadow-lg cursor-pointer">Exit Table</button>
              <div className="bg-black/40 px-3 py-1 rounded-full border border-white/10 flex items-center gap-2">
                 <span className="text-[10px] md:text-xs text-luxury-gold font-bold">ID: {room?.id}</span>
+                <button onClick={handleInvite} className="text-[10px] md:text-xs text-white hover:text-luxury-gold cursor-pointer">{inviteStatus === 'COPIED' ? '✓' : 'Inv'}</button>
              </div>
           </div>
           <div className="absolute top-[25%] left-1/2 -translate-x-1/2 flex flex-col items-center z-10">
