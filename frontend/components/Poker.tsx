@@ -4,7 +4,6 @@ import { io, Socket } from 'socket.io-client';
 import { Card, GameOutcome, GameStatus, PokerPlayer, PokerRoom, User, ChatMessage } from '../types';
 import PokerLobby from './PokerLobby';
 
-// The 'Hand' global is provided by the pokersolver script
 declare const Hand: any;
 
 const SEAT_POSITIONS = [
@@ -18,7 +17,7 @@ const SEAT_POSITIONS = [
   { x: 82, y: 75 },  // Bottom Right
 ];
 
-// [FIX] Hardcoded URL to guarantee connection
+// [FIX] Hardcoded URL
 const SOCKET_URL = "https://gumble-backend.onrender.com";
 
 interface PokerProps {
@@ -37,16 +36,11 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
   const [winnerMessage, setWinnerMessage] = useState<string | null>(null);
   
   // UI States
-  const [isChatOpen, setIsChatOpen] = useState(false); // Closed by default on mobile
-  const [showMobileChat, setShowMobileChat] = useState(false); // Mobile toggle
-
+  const [showMobileChat, setShowMobileChat] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Open chat by default only on large screens
-    if (window.innerWidth > 1024) setIsChatOpen(true);
-
     const socket = io(SOCKET_URL, {
       auth: { token: user.email },
       transports: ['websocket', 'polling'],
@@ -77,7 +71,9 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
 
     socket.on('new_message', (msg: ChatMessage) => {
       setMessages(prev => [...prev, msg]);
-      if (!isChatOpen) setShowMobileChat(true); // Notify user if chat closed
+      if (!showMobileChat) {
+         // Optional: Add notification dot logic here
+      }
     });
 
     socket.on('error', (msg: string) => {
@@ -91,8 +87,8 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
   }, [roomId, user.email, navigate]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isChatOpen]);
+    if(showMobileChat) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, showMobileChat]);
 
   const evaluateWinners = (currentRoom: PokerRoom) => {
     try {
@@ -154,8 +150,9 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
 
   if (isLoading) {
     return (
-      <div className="h-full w-full flex flex-col items-center justify-center gap-6">
+      <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center gap-6">
         <div className="w-16 h-16 border-4 border-luxury-gold/20 border-t-luxury-gold rounded-full animate-spin" />
+        <p className="text-luxury-gold font-cinzel tracking-widest animate-pulse">ENTERING VIP LOUNGE...</p>
       </div>
     );
   }
@@ -163,32 +160,31 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
   const isMyTurn = room?.players[room.activeSeat]?.id === user.email && room.phase !== 'IDLE' && room.phase !== 'SHOWDOWN';
 
   return (
-    <div className="relative w-full h-full flex flex-col lg:flex-row bg-[#0a0a0a] overflow-hidden">
+    // FULL SCREEN OVERLAY: This covers the Sidebar and Navbar
+    <div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col lg:flex-row overflow-hidden">
       
-      {/* --- GAME AREA (Responsive Container) --- */}
-      <div className="relative flex-1 flex items-center justify-center p-2 lg:p-8 overflow-hidden">
-        {/* Aspect Ratio Container - Ensures layout never breaks on mobile */}
+      {/* --- GAME AREA --- */}
+      <div className="relative flex-1 flex items-center justify-center p-2 lg:p-8 overflow-hidden bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-[#1a1a1a] to-black">
+        
+        {/* Aspect Ratio Container: Keeps the table oval regardless of screen size */}
         <div className="relative w-full max-w-6xl aspect-video bg-[#1a1a1a] rounded-[30px] lg:rounded-[100px] border-4 lg:border-8 border-luxury-gold/20 shadow-2xl flex items-center justify-center select-none">
           
           {/* Felt Background */}
           <div className="absolute inset-2 lg:inset-4 rounded-[25px] lg:rounded-[90px] bg-[#0f3a20] shadow-[inset_0_0_50px_rgba(0,0,0,0.8)] border border-white/5 overflow-hidden">
              <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/felt.png')] opacity-30 pointer-events-none" />
-             <div className="absolute inset-0 flex items-center justify-center opacity-10">
-                 <h1 className="font-cinzel text-[8cqw] text-white font-bold tracking-tighter">GUMBLE</h1>
-             </div>
           </div>
 
-          {/* Top Info Bar (Inside Table) */}
+          {/* Top Bar (Exit / Info) */}
           <div className="absolute top-[8%] left-[5%] flex gap-2 z-20">
-             <div className="bg-black/60 backdrop-blur px-3 py-1 rounded-full border border-white/10 flex items-center gap-2">
-                <span className="text-[1.5cqw] lg:text-xs text-luxury-gold font-bold">ID: {room?.id}</span>
-                <button onClick={handleInvite} className="text-[1.5cqw] lg:text-xs text-white hover:text-luxury-gold transition-colors">
-                   {inviteStatus === 'COPIED' ? '✓' : 'Copy'}
+             <button onClick={() => navigate('/')} className="bg-red-900/50 px-3 py-1 rounded-full border border-red-500/20 text-[2cqw] lg:text-xs text-red-200 uppercase font-bold hover:bg-red-900">
+               Exit Table
+             </button>
+             <div className="bg-black/40 px-3 py-1 rounded-full border border-white/10 flex items-center gap-2">
+                <span className="text-[2cqw] lg:text-xs text-luxury-gold font-bold">ID: {room?.id}</span>
+                <button onClick={handleInvite} className="text-[2cqw] lg:text-xs text-white hover:text-luxury-gold">
+                   {inviteStatus === 'COPIED' ? '✓' : 'Inv'}
                 </button>
              </div>
-             <button onClick={() => navigate('/')} className="bg-red-900/50 px-3 py-1 rounded-full border border-red-500/20 text-[1.5cqw] lg:text-xs text-red-200">
-               Exit
-             </button>
           </div>
 
           {/* Community Cards */}
@@ -209,7 +205,7 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
                   ${room?.pot.toLocaleString()}
               </div>
               {winnerMessage && (
-                <div className="absolute top-12 bg-luxury-gold text-black px-4 py-1 rounded font-bold text-[1.5cqw] animate-bounce whitespace-nowrap z-50 shadow-xl">
+                <div className="absolute top-12 bg-luxury-gold text-black px-4 py-1 rounded font-bold text-[2cqw] lg:text-sm animate-bounce whitespace-nowrap z-50 shadow-xl border border-white/20">
                   {winnerMessage}
                 </div>
               )}
@@ -262,7 +258,7 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
               );
           })}
 
-          {/* Game Controls (Floating Overlay) */}
+          {/* Action Buttons (Floating) */}
           {isMyTurn && (
              <div className="absolute bottom-[5%] left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur px-6 py-3 rounded-2xl border border-luxury-gold/30 flex gap-4 z-50 shadow-2xl animate-in slide-in-from-bottom-5">
                  <button onClick={() => handleAction('FOLD')} className="px-4 py-2 bg-red-900/30 border border-red-500/50 text-red-200 rounded lg:text-sm text-[2cqw] font-bold uppercase">Fold</button>
@@ -271,7 +267,7 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
              </div>
           )}
           
-          {/* Start Game Button (Center) */}
+          {/* Start Game Button */}
           {room?.phase === 'IDLE' && (
              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
                 <button onClick={handleStartGame} disabled={room.players.length < 2} className="px-8 py-3 bg-luxury-gold text-black font-cinzel font-black text-[2cqw] lg:text-xl rounded shadow-[0_0_30px_rgba(212,175,55,0.4)] hover:scale-105 transition-all disabled:opacity-50 disabled:grayscale">
@@ -283,22 +279,21 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
         </div>
       </div>
 
-      {/* --- CHAT SIDEBAR / OVERLAY --- */}
+      {/* --- CHAT SYSTEM --- */}
       
-      {/* Mobile Toggle Button */}
+      {/* Mobile: Toggle Button (Bottom Right) */}
       <button 
         onClick={() => setShowMobileChat(!showMobileChat)}
-        className="lg:hidden absolute bottom-4 right-4 w-12 h-12 bg-luxury-gold text-black rounded-full flex items-center justify-center shadow-2xl z-[60] hover:scale-110 transition-transform"
+        className="lg:hidden absolute bottom-6 right-6 w-12 h-12 bg-luxury-gold text-black rounded-full flex items-center justify-center shadow-2xl z-[150] hover:scale-110 transition-transform"
       >
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-        {messages.length > 0 && !showMobileChat && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full animate-pulse" />}
       </button>
 
-      {/* Chat Container (Responsive) */}
+      {/* Sidebar / Overlay */}
       <div className={`
-          absolute inset-y-0 right-0 w-80 bg-[#0f0f0f] border-l border-white/10 z-[70] transform transition-transform duration-300
+          absolute inset-y-0 right-0 w-80 bg-[#0f0f0f] border-l border-white/10 z-[140] transform transition-transform duration-300 shadow-2xl
           lg:relative lg:transform-none lg:flex flex-col
-          ${showMobileChat || (isChatOpen && window.innerWidth > 1024) ? 'translate-x-0' : 'translate-x-full'}
+          ${showMobileChat ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
       `}>
          <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/20">
             <h3 className="font-cinzel text-luxury-gold text-sm tracking-widest">TABLE CHAT</h3>
@@ -309,15 +304,15 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
              {messages.map((msg, i) => (
                  <div key={i} className="flex flex-col gap-1">
                      <span className={`text-[10px] font-bold ${msg.user === 'SYSTEM' ? 'text-green-500' : 'text-luxury-gold'}`}>{msg.user}</span>
-                     <p className="text-xs text-gray-300 bg-white/5 p-2 rounded">{msg.text}</p>
+                     <p className="text-xs text-gray-300 bg-white/5 p-2 rounded break-words border border-white/5">{msg.text}</p>
                  </div>
              ))}
              <div ref={chatEndRef} />
          </div>
 
          <form onSubmit={handleSendMessage} className="p-4 border-t border-white/10 bg-black/40 flex gap-2">
-            <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="Type..." className="flex-1 bg-black border border-white/10 rounded px-3 py-2 text-xs text-white" />
-            <button type="submit" className="bg-luxury-gold text-black px-3 py-2 rounded text-xs font-bold">SEND</button>
+            <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="Type..." className="flex-1 bg-black border border-white/10 rounded px-3 py-2 text-xs text-white focus:border-luxury-gold outline-none" />
+            <button type="submit" className="bg-luxury-gold text-black px-3 py-2 rounded text-xs font-bold hover:bg-yellow-500">SEND</button>
          </form>
       </div>
 

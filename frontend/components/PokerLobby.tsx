@@ -12,7 +12,7 @@ const PokerLobby: React.FC<PokerLobbyProps> = ({ onCreateRoom, onJoinRoom }) => 
     <div className="h-full w-full flex flex-col items-center justify-center p-4 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 via-[#0a0a0a] to-black">
       
       {/* Brand Header */}
-      <div className="mb-12 text-center">
+      <div className="mb-12 text-center animate-in fade-in slide-in-from-top-10 duration-1000">
         <h1 className="font-cinzel text-5xl md:text-7xl text-luxury-gold font-bold tracking-tighter drop-shadow-[0_0_15px_rgba(212,175,55,0.5)]">
           GUMBLE<span className="text-white">VIP</span>
         </h1>
@@ -21,59 +21,42 @@ const PokerLobby: React.FC<PokerLobbyProps> = ({ onCreateRoom, onJoinRoom }) => 
         </p>
       </div>
 
-      <div className="max-w-5xl w-full grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-12 px-4">
+      <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-6 px-4">
         
         {/* Create Room Card */}
-        <div className="group relative bg-gradient-to-br from-white/5 to-transparent border border-luxury-gold/20 p-8 rounded-[32px] flex flex-col items-center justify-center gap-6 transition-all duration-500 hover:border-luxury-gold/60 hover:shadow-[0_0_40px_rgba(212,175,55,0.1)] hover:-translate-y-2">
-          <div className="absolute inset-0 bg-luxury-gold/5 rounded-[32px] opacity-0 group-hover:opacity-100 transition-opacity" />
-          
+        <div className="group relative bg-white/5 border border-luxury-gold/20 p-8 rounded-[32px] flex flex-col items-center justify-center gap-6 transition-all duration-300 hover:bg-white/10 hover:border-luxury-gold/50 cursor-pointer" onClick={() => onCreateRoom(false)}>
           <div className="w-20 h-20 bg-luxury-gold/10 rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-500 border border-luxury-gold/20">
             <span className="text-4xl">♠️</span>
           </div>
-          
-          <div className="text-center z-10">
+          <div className="text-center">
             <h2 className="font-cinzel text-2xl text-white font-bold mb-2">Create Table</h2>
-            <p className="text-gray-400 text-xs leading-relaxed max-w-[200px]">
-              Host your own high-stakes game. You control the dealer button.
-            </p>
+            <p className="text-gray-400 text-xs">Host a new game. You control the dealer button.</p>
           </div>
-
-          <button 
-            onClick={() => onCreateRoom(false)}
-            className="w-full py-4 bg-luxury-gold text-luxury-black font-black uppercase tracking-widest text-xs rounded-xl hover:bg-white hover:scale-105 transition-all shadow-lg z-10"
-          >
-            Start New Game
-          </button>
         </div>
 
         {/* Join Room Card */}
-        <div className="group relative bg-gradient-to-br from-white/5 to-transparent border border-white/10 p-8 rounded-[32px] flex flex-col items-center justify-center gap-6 transition-all duration-500 hover:border-white/30 hover:shadow-[0_0_40px_rgba(255,255,255,0.05)] hover:-translate-y-2">
-           <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-500 border border-white/10">
+        <div className="group relative bg-white/5 border border-white/10 p-8 rounded-[32px] flex flex-col items-center justify-center gap-6 transition-all duration-300 hover:bg-white/10 hover:border-white/30">
+           <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-2">
             <span className="text-4xl">🚪</span>
           </div>
-          
-          <div className="text-center z-10">
-            <h2 className="font-cinzel text-2xl text-white font-bold mb-2">Join Table</h2>
-            <p className="text-gray-400 text-xs leading-relaxed max-w-[200px]">
-              Enter a Room ID to take an open seat at an existing table.
-            </p>
-          </div>
-          
-          <div className="w-full flex flex-col gap-3 z-10">
-            <input 
-              type="text" 
-              placeholder="ENTER ROOM ID"
-              value={joinId}
-              onChange={(e) => setJoinId(e.target.value.toUpperCase())}
-              className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-4 text-center text-white font-mono text-lg tracking-widest focus:outline-none focus:border-luxury-gold transition-colors placeholder:text-gray-700"
-            />
-            <button 
-              onClick={() => joinId && onJoinRoom(joinId)}
-              disabled={!joinId}
-              className="w-full py-4 bg-white/10 text-white font-black uppercase tracking-widest text-xs rounded-xl hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-            >
-              Sit Down
-            </button>
+          <div className="text-center w-full">
+            <h2 className="font-cinzel text-2xl text-white font-bold mb-4">Join Table</h2>
+            <div className="flex gap-2">
+                <input 
+                type="text" 
+                placeholder="ROOM ID"
+                value={joinId}
+                onChange={(e) => setJoinId(e.target.value.toUpperCase())}
+                className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-center text-white font-mono tracking-widest focus:outline-none focus:border-luxury-gold"
+                />
+                <button 
+                onClick={() => joinId && onJoinRoom(joinId)}
+                disabled={!joinId}
+                className="bg-luxury-gold text-black font-bold px-6 rounded-xl hover:scale-105 transition-transform disabled:opacity-50"
+                >
+                GO
+                </button>
+            </div>
           </div>
         </div>
 
