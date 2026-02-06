@@ -318,4 +318,34 @@ io.on('connection', (socket: Socket) => {
     handleNextTurn(roomId);
   });
 
-  socket.on('player_action', ({ roomId, action }: { roomId: string, action: { type: string, amount
+  socket.on('player_action', ({ roomId, action }: { roomId: string, action: { type: string, amount?: number } }) => {
+    // [FIX] Use the socket's auth token to identify the player securely
+    processAction(roomId, (socket.handshake.auth.token || ''), action);
+  });
+
+  socket.on('send_message', ({ roomId, user, text }: { roomId: string, user: string, text: string }) => {
+    const room = rooms.get(roomId);
+    if (room) {
+      const msg = { user, text, timestamp: Date.now() };
+      room.messages.push(msg);
+      io.to(roomId).emit('new_message', msg);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    rooms.forEach((room, roomId) => {
+      // [FIX] This now works because we saved socketId in join_room
+      const playerIndex = room.players.findIndex((p: any) => p.socketId === socket.id);
+      if (playerIndex !== -1) {
+        room.players.splice(playerIndex, 1);
+        if (room.players.length === 0) rooms.delete(roomId);
+        else broadcastRoom(roomId);
+      }
+    });
+  });
+}); // <--- THIS WAS MISSING IN YOUR SCREENSHOT
+
+const PORT = process.env.PORT || 10000;
+httpServer.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`GUMBLEVIP Backend Active on 0.0.0.0:${PORT}`);
+});
