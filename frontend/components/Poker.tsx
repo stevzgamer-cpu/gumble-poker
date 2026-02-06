@@ -18,9 +18,9 @@ const SEAT_POSITIONS = [
   { x: 78, y: 80 },  // Bottom Right
 ];
 
-// Use environment variable with fallback for robust connectivity
-// [FIX] Hardcode the Backend URL to ensure it connects on Render
+// [FIX] Hardcoded URL to guarantee connection on Render
 const SOCKET_URL = "https://gumble-backend.onrender.com";
+
 interface PokerProps {
   onGameEnd: (outcome: GameOutcome) => void;
   user: User;
@@ -41,16 +41,18 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Establishing socket connection without transport restrictions for better compatibility
+    console.log(`GUMBLEVIP: Connecting to Poker Server at ${SOCKET_URL}`);
+    
     const socket = io(SOCKET_URL, {
-      auth: { token: user.email }, // Using email as token for this demo
-      reconnectionAttempts: 5,
-      timeout: 10000
+      auth: { token: user.email },
+      transports: ['websocket', 'polling'], // Fallback for stability
+      reconnectionAttempts: 10,
     });
+    
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log('GUMBLEVIP: Poker Connection Established');
+      console.log('GUMBLEVIP: Poker Connection Established.');
       socket.emit('join_room', { roomId, user });
     });
 
@@ -75,24 +77,19 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
     });
 
     socket.on('error', (msg: string) => {
-      console.error('Poker Socket Error:', msg);
+      console.error('Poker Business Error:', msg);
       alert(msg);
       setIsLoading(false);
-      navigate('/poker');
-    });
-
-    socket.on('connect_error', (err) => {
-      console.error('Poker Connection Error:', err.message);
-      // We don't alert here immediately as Socket.IO will retry
+      navigate('/'); // Redirect to lobby on error
     });
 
     return () => {
+      console.log('GUMBLEVIP: Disconnecting');
       socket.emit('leave_room', { roomId });
       socket.disconnect();
     };
-  }, [roomId, user, navigate]);
+  }, [roomId, user.email, navigate]);
 
-  // Auto-scroll chat to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -102,8 +99,6 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
       if (typeof Hand === 'undefined') return;
 
       const activePlayers = currentRoom.players.filter(p => !p.isFolded);
-      
-      // Pokersolver expects '10' for tens, and first char for others, plus suit char
       const formatCard = (c: Card) => {
         const val = c.value === '10' ? '10' : c.value[0];
         const suit = c.suit[0].toLowerCase();
@@ -111,7 +106,6 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
       };
 
       const community = currentRoom.communityCards.map(formatCard);
-      
       const solvedHands = activePlayers.map(p => {
         const fullHand = [...p.hand.map(formatCard), ...community];
         return Hand.solve(fullHand, p.id);
@@ -127,12 +121,12 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
             onGameEnd({ 
               status: GameStatus.WON, 
               amount: currentRoom.pot, 
-              message: `Royal Victory! ${winners[0].descr}` 
+              message: `Hand of the Dragon! ${winners[0].descr}` 
             });
         }
       }
     } catch (e) {
-      console.error("GUMBLEVIP Evaluation error:", e);
+      console.error("Evaluation error:", e);
     }
   };
 
@@ -155,12 +149,7 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
-    
-    socketRef.current?.emit('send_message', { 
-      roomId, 
-      user: user.name, 
-      text: newMessage 
-    });
+    socketRef.current?.emit('send_message', { roomId, user: user.name, text: newMessage });
     setNewMessage('');
   };
 
@@ -168,7 +157,9 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
     return (
       <div className="h-full w-full flex flex-col items-center justify-center gap-6">
         <div className="w-16 h-16 border-4 border-luxury-gold/20 border-t-luxury-gold rounded-full animate-spin" />
-        <p className="font-cinzel text-luxury-gold tracking-widest text-sm animate-pulse uppercase">Syncing with High-Stakes Table...</p>
+        <div className="text-center space-y-2">
+          <p className="font-cinzel text-luxury-gold tracking-widest text-sm animate-pulse uppercase">Syncing with High-Stakes Table...</p>
+        </div>
       </div>
     );
   }
@@ -187,23 +178,19 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
               <h1 className="font-cinzel text-[12vw] text-white font-bold tracking-tighter">GUMBLEVIP</h1>
           </div>
 
-          {/* Table Controls (Exit / Invite) */}
           <div className="absolute top-6 left-10 flex items-center gap-4 z-[60]">
               <div className="bg-[#050505]/80 backdrop-blur-md px-4 py-2 rounded-xl border border-luxury-gold/20 flex items-center gap-4 shadow-xl">
                   <span className="text-[9px] text-luxury-gold font-black uppercase tracking-widest">ID: {room?.id}</span>
-                  <button 
-                      onClick={handleInvite}
-                      className={`px-4 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${inviteStatus === 'COPIED' ? 'bg-green-600 text-white' : 'bg-luxury-gold text-luxury-black hover:brightness-110'}`}
-                  >
+                  <button onClick={handleInvite} className={`px-4 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${inviteStatus === 'COPIED' ? 'bg-green-600 text-white' : 'bg-luxury-gold text-luxury-black hover:brightness-110'}`}>
                       {inviteStatus === 'COPIED' ? 'Link Copied' : 'Invite'}
                   </button>
               </div>
-              <button onClick={() => navigate('/poker')} className="p-2 bg-red-900/20 border border-red-500/30 text-red-500 rounded-xl hover:bg-red-900/40 transition-all text-[10px] font-black uppercase tracking-widest">
+              {/* [FIX] Changed '/poker' to '/' to prevent Black Screen */}
+              <button onClick={() => navigate('/')} className="p-2 bg-red-900/20 border border-red-500/30 text-red-500 rounded-xl hover:bg-red-900/40 transition-all text-[10px] font-black uppercase tracking-widest">
                   Lobby
               </button>
           </div>
 
-          {/* Community Cards */}
           <div className="flex gap-4 z-10 transition-all duration-500 transform">
              {room?.communityCards.map((card, i) => (
                <div key={i} className="w-14 h-20 md:w-20 md:h-30 rounded-lg border-2 border-luxury-gold/20 shadow-2xl overflow-hidden animate-in slide-in-from-top-4 duration-300">
@@ -215,7 +202,6 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
              ))}
           </div>
 
-          {/* Pot Display */}
           <div className="absolute top-[65%] flex flex-col items-center gap-2 z-10">
               <span className="text-gray-400 text-[8px] uppercase tracking-[0.3em] font-black">Total Pot</span>
               <div className="bg-[#050505]/90 px-10 py-3 rounded-full border border-luxury-gold/40 text-luxury-gold font-cinzel font-bold text-2xl gold-glow shadow-2xl">
@@ -228,7 +214,6 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
               )}
           </div>
 
-          {/* Player Seats */}
           {SEAT_POSITIONS.map((pos, i) => {
               const player = room?.players.find(p => p.seat === i);
               const isActive = room?.activeSeat === i && room?.phase !== 'IDLE' && room?.phase !== 'SHOWDOWN';
@@ -273,22 +258,20 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
           })}
         </div>
 
-        {/* Action HUD */}
         {isMyTurn && (
           <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-luxury-black/95 backdrop-blur-2xl p-6 rounded-[32px] border border-luxury-gold/30 shadow-[0_20px_60px_rgba(0,0,0,0.8)] z-50 animate-in slide-in-from-bottom-10">
               <div className="pr-8 border-r border-white/10 mr-4">
-                 <span className="text-[9px] text-gray-500 uppercase font-black tracking-widest block mb-1">Current Call</span>
-                 <span className="text-xl text-white font-black italic">$200</span>
+                 <span className="text-[9px] text-gray-500 uppercase font-black tracking-widest block mb-1">Action Req.</span>
+                 <span className="text-xl text-white font-black italic">${(room?.currentBet || 0).toLocaleString()}</span>
               </div>
               <div className="flex gap-2">
                   <button onClick={() => handleAction('FOLD')} className="px-8 py-3 bg-white/5 border border-white/10 text-white font-black rounded-xl hover:bg-red-900/20 hover:border-red-500/50 transition-all uppercase text-[10px] tracking-widest">Fold</button>
                   <button onClick={() => handleAction('CHECK')} className="px-8 py-3 bg-white/5 border border-white/10 text-white font-black rounded-xl hover:border-luxury-gold/50 transition-all uppercase text-[10px] tracking-widest">Check</button>
-                  <button onClick={() => handleAction('CALL')} className="px-14 py-3 bg-luxury-gold text-luxury-black font-black rounded-xl hover:brightness-110 active:scale-95 transition-all uppercase text-[10px] tracking-widest shadow-xl gold-glow">Call (200)</button>
+                  <button onClick={() => handleAction('CALL')} className="px-14 py-3 bg-luxury-gold text-luxury-black font-black rounded-xl hover:brightness-110 active:scale-95 transition-all uppercase text-[10px] tracking-widest shadow-xl gold-glow">Call</button>
               </div>
           </div>
         )}
 
-        {/* Start Game Overlay */}
         {room?.phase === 'IDLE' && (
           <div className="absolute inset-0 flex items-center justify-center z-40 bg-[#000000]/20 backdrop-blur-[1px]">
              <button onClick={handleStartGame} disabled={room.players.length < 2} className="px-14 py-5 bg-luxury-gold text-luxury-black font-cinzel font-bold text-2xl rounded-2xl shadow-[0_0_50px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:grayscale gold-glow">
@@ -298,7 +281,6 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
         )}
       </div>
 
-      {/* VIP Chat Sidebar */}
       <div className={`flex flex-col w-full lg:w-96 bg-[#050505]/80 backdrop-blur-2xl border border-luxury-gold/20 rounded-3xl overflow-hidden transition-all duration-500 flex-shrink-0 ${isChatOpen ? 'h-[400px] lg:h-full' : 'h-16 lg:w-16'}`}>
         <div className="p-5 border-b border-luxury-gold/10 flex items-center justify-between bg-black/40">
           {isChatOpen && (
@@ -324,9 +306,7 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
                       <span className="text-[7px] text-gray-600 font-bold">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                     <p className={`text-[11px] leading-relaxed max-w-[90%] px-4 py-3 rounded-2xl border shadow-lg ${
-                      isMe 
-                        ? 'bg-luxury-gold/10 border-luxury-gold/30 text-white rounded-tr-none' 
-                        : 'bg-white/5 border-white/10 text-gray-300 rounded-tl-none'
+                      isMe ? 'bg-luxury-gold/10 border-luxury-gold/30 text-white rounded-tr-none' : 'bg-white/5 border-white/10 text-gray-300 rounded-tl-none'
                     }`}>
                       {msg.text}
                     </p>
@@ -344,11 +324,7 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
                 placeholder="Talk to the table..."
                 className="flex-1 bg-luxury-black border border-white/10 rounded-2xl px-5 py-3 text-[11px] text-white focus:outline-none focus:border-luxury-gold/50 placeholder:text-gray-700 transition-all"
               />
-              <button 
-                type="submit" 
-                disabled={!newMessage.trim()}
-                className="w-12 h-12 flex items-center justify-center bg-luxury-gold text-luxury-black rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-30 disabled:grayscale"
-              >
+              <button type="submit" disabled={!newMessage.trim()} className="w-12 h-12 flex items-center justify-center bg-luxury-gold text-luxury-black rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-30 disabled:grayscale">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
                 </svg>
