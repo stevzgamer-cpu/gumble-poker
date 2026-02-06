@@ -6,19 +6,18 @@ import PokerLobby from './PokerLobby';
 
 declare const Hand: any;
 
-// Visual positions (0 is always Bottom Center - YOU)
+// [FIX] WIDER POSITIONS to clear the center
 const SEAT_POSITIONS = [
   { x: 50, y: 88 },  // 0: Bottom (You)
-  { x: 18, y: 75 },  // 1: Bottom Left
-  { x: 8, y: 40 },   // 2: Left
-  { x: 25, y: 15 },  // 3: Top Left
-  { x: 50, y: 10 },  // 4: Top
-  { x: 75, y: 15 },  // 5: Top Right
-  { x: 92, y: 40 },  // 6: Right
-  { x: 82, y: 75 },  // 7: Bottom Right
+  { x: 15, y: 75 },  // 1: Bottom Left (Pushed out)
+  { x: 5, y: 50 },   // 2: Left (Far Edge)
+  { x: 15, y: 25 },  // 3: Top Left
+  { x: 50, y: 12 },  // 4: Top
+  { x: 85, y: 25 },  // 5: Top Right
+  { x: 95, y: 50 },  // 6: Right (Far Edge)
+  { x: 85, y: 75 },  // 7: Bottom Right (Pushed out)
 ];
 
-// [FIX] Hardcoded URL
 const SOCKET_URL = "https://gumble-backend.onrender.com";
 
 interface PokerProps {
@@ -36,7 +35,6 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
   const [isLoading, setIsLoading] = useState(true);
   const [winnerMessage, setWinnerMessage] = useState<string | null>(null);
   
-  // UI States
   const [showMobileChat, setShowMobileChat] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -146,7 +144,6 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
     setNewMessage('');
   };
 
-  // Helper to find "My Seat" for relative positioning
   const getMySeatIndex = () => {
     if (!room || !user) return -1;
     return room.players.findIndex(p => p.id === user.email);
@@ -162,13 +159,8 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
   }
 
   const isMyTurn = room?.players[room.activeSeat]?.id === user.email && room.phase !== 'IDLE' && room.phase !== 'SHOWDOWN';
-
-  // Relative Positioning Logic
   const mySeatIndex = getMySeatIndex();
   
-  // Create a list of players with their "Visual Seat" calculated
-  // If I am Seat 3, Visual Seat 0 = Seat 3. Visual Seat 1 = Seat 4, etc.
-  // This ROTATES the table so I am always at the bottom.
   const visualPlayers = room?.players.map(p => {
     const shift = mySeatIndex === -1 ? 0 : mySeatIndex;
     const totalSeats = 8; 
@@ -177,7 +169,6 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
   });
 
   return (
-    // FULL SCREEN OVERLAY
     <div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col lg:flex-row overflow-hidden">
       
       {/* --- GAME AREA --- */}
@@ -191,106 +182,103 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
              <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/felt.png')] opacity-30 pointer-events-none" />
           </div>
 
-          {/* Top Bar (Exit / Info) */}
+          {/* Top Bar (Exit / Info) - MOVED TO Z-60 */}
           <div className="absolute top-[8%] left-[5%] flex gap-2 z-[60]">
-             <button onClick={() => navigate('/')} className="bg-red-900/50 px-3 py-1 rounded-full border border-red-500/20 text-[2cqw] lg:text-xs text-red-200 uppercase font-bold hover:bg-red-900 shadow-lg cursor-pointer">
+             <button onClick={() => navigate('/')} className="bg-red-900/50 px-3 py-1 rounded-full border border-red-500/20 text-[10px] md:text-xs text-red-200 uppercase font-bold hover:bg-red-900 shadow-lg cursor-pointer">
                Exit Table
              </button>
              <div className="bg-black/40 px-3 py-1 rounded-full border border-white/10 flex items-center gap-2">
-                <span className="text-[2cqw] lg:text-xs text-luxury-gold font-bold">ID: {room?.id}</span>
-                <button onClick={handleInvite} className="text-[2cqw] lg:text-xs text-white hover:text-luxury-gold cursor-pointer">
+                <span className="text-[10px] md:text-xs text-luxury-gold font-bold">ID: {room?.id}</span>
+                <button onClick={handleInvite} className="text-[10px] md:text-xs text-white hover:text-luxury-gold cursor-pointer">
                    {inviteStatus === 'COPIED' ? '✓' : 'Inv'}
                 </button>
              </div>
           </div>
 
-          {/* Pot Display - [FIX] Moved WAY UP to 18% to clear the cards */}
-          <div className="absolute top-[18%] left-1/2 -translate-x-1/2 flex flex-col items-center z-10">
-              <span className="text-[1cqw] text-luxury-gold/60 font-black tracking-[0.3em] uppercase mb-1">Total Pot</span>
-              <div className="bg-[#050505]/90 px-[4cqw] py-[0.8cqw] rounded-full border border-luxury-gold/50 text-luxury-gold font-cinzel font-bold text-[3.5cqw] shadow-[0_0_30px_rgba(212,175,55,0.2)]">
+          {/* Pot Display - [FIX] MOVED UP to 25% to clear everything */}
+          <div className="absolute top-[25%] left-1/2 -translate-x-1/2 flex flex-col items-center z-10">
+              <span className="text-[10px] text-luxury-gold/60 font-black tracking-[0.3em] uppercase mb-1">Total Pot</span>
+              <div className="bg-[#050505]/90 px-8 py-2 rounded-full border border-luxury-gold/50 text-luxury-gold font-cinzel font-bold text-2xl shadow-[0_0_30px_rgba(212,175,55,0.2)]">
                   ${room?.pot.toLocaleString()}
               </div>
               {winnerMessage && (
-                <div className="absolute top-16 bg-luxury-gold text-black px-4 py-1 rounded font-bold text-[2cqw] lg:text-sm animate-bounce whitespace-nowrap z-50 shadow-xl border border-white/20">
+                <div className="absolute top-16 bg-luxury-gold text-black px-4 py-1 rounded font-bold text-xs animate-bounce whitespace-nowrap z-50 shadow-xl border border-white/20">
                   {winnerMessage}
                 </div>
               )}
           </div>
 
-          {/* Community Cards - [FIX] Moved UP to 38% to clear Player cards */}
-          <div className="absolute top-[38%] left-1/2 -translate-x-1/2 flex gap-[1cqw] z-10">
+          {/* Community Cards - [FIX] Centered at 45% */}
+          <div className="absolute top-[45%] left-1/2 -translate-x-1/2 flex gap-2 z-10">
              {room?.communityCards.map((card, i) => (
-               <div key={i} className="w-[8cqw] aspect-[2/3] rounded bg-white shadow-xl animate-in zoom-in duration-300">
+               <div key={i} className="w-[8%] aspect-[2/3] max-w-[50px] rounded bg-white shadow-xl animate-in zoom-in duration-300">
                   <img src={card.image} className="w-full h-full object-cover rounded" alt="card" />
                </div>
              ))}
              {Array.from({ length: 5 - (room?.communityCards.length || 0) }).map((_, i) => (
-               <div key={i} className="w-[8cqw] aspect-[2/3] rounded border border-white/10 bg-black/20" />
+               <div key={i} className="w-[8%] aspect-[2/3] max-w-[50px] rounded border border-white/10 bg-black/20" />
              ))}
           </div>
 
-          {/* Seats with Relative Positioning */}
+          {/* Seats with Safe % Positioning */}
           {SEAT_POSITIONS.map((pos, visualIndex) => {
-              // Find the player who belongs in this VISUAL seat
               const player = visualPlayers?.find(p => p.visualSeat === visualIndex);
-              
               const isActive = player && room?.activeSeat === player.seat && room?.phase !== 'IDLE' && room?.phase !== 'SHOWDOWN';
               const isMe = player?.id === user.email;
               
               return (
-                  <div key={visualIndex} className="absolute w-[14cqw] aspect-square flex flex-col items-center justify-center transition-all duration-500" 
+                  <div key={visualIndex} className="absolute w-[14%] aspect-square flex flex-col items-center justify-center transition-all duration-500" 
                        style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)' }}>
                       
                       {player ? (
                           <div className={`relative w-full h-full flex flex-col items-center ${isActive ? 'scale-110 z-30' : 'z-20'}`}>
-                              {/* Cards - [FIX] MADE LARGER (w-7cqw) and positioned closer to avatar */}
-                              <div className="absolute -top-[45%] flex -space-x-[3.5cqw]">
+                              {/* Cards - [FIX] Sized to 50% of seat width (approx 7% of table) */}
+                              <div className="absolute -top-[45%] flex -space-x-4">
                                   {player.hand.length > 0 ? player.hand.map((c, idx) => (
-                                      <div key={idx} className={`w-[7cqw] aspect-[2/3] bg-white rounded-lg shadow-2xl transition-transform ${player.isFolded ? 'opacity-40 grayscale' : ''}`}>
-                                          <img src={(isMe || room?.phase === 'SHOWDOWN') ? c.image : 'https://deckofcardsapi.com/static/img/back.png'} className="w-full h-full rounded-lg object-cover" />
+                                      <div key={idx} className={`w-[50%] aspect-[2/3] bg-white rounded-md shadow-2xl transition-transform ${player.isFolded ? 'opacity-40 grayscale' : ''}`}>
+                                          <img src={(isMe || room?.phase === 'SHOWDOWN') ? c.image : 'https://deckofcardsapi.com/static/img/back.png'} className="w-full h-full rounded-md object-cover" />
                                       </div>
-                                  )) : <div className="w-[7cqw] aspect-[2/3] border border-white/10 rounded-lg bg-black/20" />}
+                                  )) : <div className="w-[50%] aspect-[2/3] border border-white/10 rounded-md bg-black/20" />}
                               </div>
 
-                              {/* Avatar Circle */}
-                              <div className={`w-[6cqw] h-[6cqw] rounded-full overflow-hidden border-2 bg-black ${isActive ? 'border-luxury-gold shadow-[0_0_15px_rgba(212,175,55,0.6)]' : 'border-white/20'}`}>
+                              {/* Avatar */}
+                              <div className={`w-[60%] aspect-square rounded-full overflow-hidden border-2 bg-black ${isActive ? 'border-luxury-gold shadow-[0_0_15px_rgba(212,175,55,0.6)]' : 'border-white/20'}`}>
                                   <img src={player.avatar} className="w-full h-full object-cover" />
                               </div>
                               
-                              {/* Name/Balance Tag */}
+                              {/* Name Tag */}
                               <div className="mt-1 bg-black/80 backdrop-blur border border-white/10 rounded-md px-2 py-0.5 flex flex-col items-center min-w-[120%]">
-                                  <span className="text-[1.2cqw] text-white font-bold truncate max-w-[8cqw]">{isMe ? 'YOU' : player.name}</span>
-                                  <span className="text-[1cqw] text-luxury-gold">${player.balance.toLocaleString()}</span>
+                                  <span className="text-[10px] text-white font-bold truncate max-w-[60px]">{isMe ? 'YOU' : player.name}</span>
+                                  <span className="text-[9px] text-luxury-gold">${player.balance.toLocaleString()}</span>
                               </div>
 
                               {/* Dealer Button */}
                               {player.isDealer && (
-                                <div className="absolute top-0 right-0 w-[2.5cqw] h-[2.5cqw] bg-white text-black rounded-full flex items-center justify-center font-black text-[1.5cqw] border border-black z-40">D</div>
+                                <div className="absolute top-0 right-[10%] w-4 h-4 bg-white text-black rounded-full flex items-center justify-center font-black text-[10px] border border-black z-40">D</div>
                               )}
                           </div>
                       ) : (
-                          // Empty Seat
-                          <div className="w-[5cqw] h-[5cqw] rounded-full border-2 border-dashed border-white/10 flex items-center justify-center opacity-30">
-                             <span className="text-[2cqw]">+</span>
+                          <div className="w-8 h-8 rounded-full border-2 border-dashed border-white/10 flex items-center justify-center opacity-30">
+                             <span className="text-xs">+</span>
                           </div>
                       )}
                   </div>
               );
           })}
 
-          {/* Action Buttons (Floating) */}
+          {/* Action Buttons */}
           {isMyTurn && (
              <div className="absolute bottom-[5%] left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur px-6 py-3 rounded-2xl border border-luxury-gold/30 flex gap-4 z-50 shadow-2xl animate-in slide-in-from-bottom-5">
-                 <button onClick={() => handleAction('FOLD')} className="px-4 py-2 bg-red-900/30 border border-red-500/50 text-red-200 rounded lg:text-sm text-[2cqw] font-bold uppercase">Fold</button>
-                 <button onClick={() => handleAction('CHECK')} className="px-4 py-2 bg-white/10 border border-white/20 text-white rounded lg:text-sm text-[2cqw] font-bold uppercase">Check</button>
-                 <button onClick={() => handleAction('CALL')} className="px-6 py-2 bg-luxury-gold text-black rounded lg:text-sm text-[2cqw] font-black uppercase shadow-lg hover:brightness-110">Call</button>
+                 <button onClick={() => handleAction('FOLD')} className="px-4 py-2 bg-red-900/30 border border-red-500/50 text-red-200 rounded text-xs font-bold uppercase">Fold</button>
+                 <button onClick={() => handleAction('CHECK')} className="px-4 py-2 bg-white/10 border border-white/20 text-white rounded text-xs font-bold uppercase">Check</button>
+                 <button onClick={() => handleAction('CALL')} className="px-6 py-2 bg-luxury-gold text-black rounded text-xs font-black uppercase shadow-lg hover:brightness-110">Call</button>
              </div>
           )}
           
-          {/* Start Game Button */}
+          {/* Start Game */}
           {room?.phase === 'IDLE' && (
              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
-                <button onClick={handleStartGame} disabled={room.players.length < 2} className="px-8 py-3 bg-luxury-gold text-black font-cinzel font-black text-[2cqw] lg:text-xl rounded shadow-[0_0_30px_rgba(212,175,55,0.4)] hover:scale-105 transition-all disabled:opacity-50 disabled:grayscale cursor-pointer">
+                <button onClick={handleStartGame} disabled={room.players.length < 2} className="px-8 py-3 bg-luxury-gold text-black font-cinzel font-black text-xl rounded shadow-[0_0_30px_rgba(212,175,55,0.4)] hover:scale-105 transition-all disabled:opacity-50 disabled:grayscale cursor-pointer">
                    DEAL CARDS
                 </button>
              </div>
@@ -316,7 +304,6 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
             <h3 className="font-cinzel text-luxury-gold text-sm tracking-widest">TABLE CHAT</h3>
             <button onClick={() => setShowMobileChat(false)} className="lg:hidden text-gray-500 hover:text-white">✕</button>
          </div>
-
          <div className="flex-1 overflow-y-auto p-4 space-y-3">
              {messages.map((msg, i) => (
                  <div key={i} className="flex flex-col gap-1">
@@ -326,7 +313,6 @@ const PokerTable: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => vo
              ))}
              <div ref={chatEndRef} />
          </div>
-
          <form onSubmit={handleSendMessage} className="p-4 border-t border-white/10 bg-black/40 flex gap-2">
             <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="Type..." className="flex-1 bg-black border border-white/10 rounded px-3 py-2 text-xs text-white focus:border-luxury-gold outline-none" />
             <button type="submit" className="bg-luxury-gold text-black px-3 py-2 rounded text-xs font-bold hover:bg-yellow-500">SEND</button>
