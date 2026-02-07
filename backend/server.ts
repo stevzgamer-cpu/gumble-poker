@@ -6,7 +6,6 @@ import cors from 'cors';
 import * as dotenv from 'dotenv';
 import { Card, PokerPlayer, PokerRoom } from './types';
 
-// Use import for TypeScript compatibility
 import * as PokerSolver from 'pokersolver';
 const Hand = (PokerSolver as any).Hand;
 
@@ -18,7 +17,6 @@ interface ChatMessage {
   timestamp: number;
 }
 
-// Enhanced Room Interface for Server logic
 interface PokerRoomInternal extends PokerRoom {
   deck: Card[];
   messages: ChatMessage[];
@@ -64,12 +62,11 @@ const createDeck = (): Card[] => {
   return deck.sort(() => Math.random() - 0.5);
 };
 
-const TURN_TIME = 30000; // 30 seconds
+const TURN_TIME = 30000;
 
 const broadcastRoom = (roomId: string) => {
   const room = rooms.get(roomId);
   if (room) {
-    // SECURITY: Remove secret data (deck, timer) before sending to frontend
     const { deck, timerHandle, ...publicRoom } = room;
     io.to(roomId).emit('room_state', publicRoom);
   }
@@ -81,7 +78,6 @@ const handleNextTurn = (roomId: string) => {
 
   if (room.timerHandle) clearTimeout(room.timerHandle);
 
-  // Check if round is over (everyone matched bet or folded)
   const activePlayers = room.players.filter(p => !p.isFolded && p.balance > 0);
   const everyoneActed = room.players.every(p => p.isFolded || (p.bet === room.currentBet || p.balance === 0));
 
@@ -90,7 +86,6 @@ const handleNextTurn = (roomId: string) => {
     return;
   }
 
-  // Find next player
   let nextSeat = (room.activeSeat + 1) % room.players.length;
   let attempts = 0;
   while ((room.players[nextSeat].isFolded || room.players[nextSeat].balance === 0) && attempts < room.players.length) {
@@ -102,10 +97,8 @@ const handleNextTurn = (roomId: string) => {
   room.actionStartTime = Date.now();
   broadcastRoom(roomId);
 
-  // Auto-fold if player sleeps
   room.timerHandle = setTimeout(() => {
     const afkPlayerId = room.players[nextSeat].id;
-    console.log(`Auto-folding player ${afkPlayerId} due to timeout`);
     processAction(roomId, afkPlayerId, { type: 'FOLD' });
   }, TURN_TIME);
 };
@@ -114,7 +107,6 @@ const advancePhase = (roomId: string) => {
   const room = rooms.get(roomId);
   if (!room) return;
 
-  // Reset per-phase bets
   room.players.forEach(p => p.bet = 0);
   room.currentBet = 0;
   room.minRaise = 100;
@@ -270,11 +262,9 @@ io.on('connection', (socket: Socket) => {
         isDealer: room.players.length === 0,
         seat: room.players.length
       };
-      // [FIX] Save socket ID so we can remove player on disconnect
       (newPlayer as any).socketId = socket.id; 
       room.players.push(newPlayer);
     } else {
-      // [FIX] Update socket ID for reconnecting players
       (existingPlayer as any).socketId = socket.id;
     }
 
@@ -291,7 +281,6 @@ io.on('connection', (socket: Socket) => {
     room.pot = 0;
     room.phase = 'PRE_FLOP';
     
-    // Rotate Dealer
     room.dealerIndex = (room.dealerIndex + 1) % room.players.length;
     room.players.forEach((p, i) => {
       p.isDealer = i === room.dealerIndex;
@@ -300,7 +289,6 @@ io.on('connection', (socket: Socket) => {
       p.bet = 0;
     });
 
-    // Blinds
     const sbIndex = (room.dealerIndex + 1) % room.players.length;
     const bbIndex = (room.dealerIndex + 2) % room.players.length;
     
@@ -319,7 +307,6 @@ io.on('connection', (socket: Socket) => {
   });
 
   socket.on('player_action', ({ roomId, action }: { roomId: string, action: { type: string, amount?: number } }) => {
-    // [FIX] Use the socket's auth token to identify the player securely
     processAction(roomId, (socket.handshake.auth.token || ''), action);
   });
 
@@ -334,7 +321,6 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('disconnect', () => {
     rooms.forEach((room, roomId) => {
-      // [FIX] This now works because we saved socketId in join_room
       const playerIndex = room.players.findIndex((p: any) => p.socketId === socket.id);
       if (playerIndex !== -1) {
         room.players.splice(playerIndex, 1);
@@ -343,7 +329,7 @@ io.on('connection', (socket: Socket) => {
       }
     });
   });
-}); // <--- THIS WAS MISSING IN YOUR SCREENSHOT
+});
 
 const PORT = process.env.PORT || 10000;
 httpServer.listen(Number(PORT), '0.0.0.0', () => {
