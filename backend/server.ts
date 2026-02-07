@@ -62,7 +62,7 @@ const createDeck = (): Card[] => {
   return deck.sort(() => Math.random() - 0.5);
 };
 
-const TURN_TIME = 30000;
+const TURN_TIME = 30000; // 30 seconds per turn
 
 const broadcastRoom = (roomId: string) => {
   const room = rooms.get(roomId);
@@ -78,27 +78,44 @@ const handleNextTurn = (roomId: string) => {
 
   if (room.timerHandle) clearTimeout(room.timerHandle);
 
+  // LOGIC FIX: Round ends ONLY if everyone active has matched the bet
   const activePlayers = room.players.filter(p => !p.isFolded && p.balance > 0);
-  const everyoneActed = room.players.every(p => p.isFolded || (p.bet === room.currentBet || p.balance === 0));
-
-  if (everyoneActed && room.players[room.activeSeat].id === room.players[room.lastRaiserIndex].id) {
-    advancePhase(roomId);
-    return;
+  const everyoneMatched = activePlayers.every(p => p.bet === room.currentBet);
+  
+  // If everyone matched AND we are back to the aggressor (or everyone checked), advance.
+  // Special case: If only one person is left, they win immediately.
+  const activeCount = room.players.filter(p => !p.isFolded).length;
+  if (activeCount < 2) {
+      evaluateWinners(roomId);
+      return;
   }
 
+  // If everyone acted and bets are equal, go to next phase
+  // We check if the current player is the last one who needed to act
   let nextSeat = (room.activeSeat + 1) % room.players.length;
+  
+  // Skip folded/all-in players
   let attempts = 0;
   while ((room.players[nextSeat].isFolded || room.players[nextSeat].balance === 0) && attempts < room.players.length) {
     nextSeat = (nextSeat + 1) % room.players.length;
     attempts++;
   }
 
+  // If we wrapped around to the last raiser (or dealer if no raise) AND everyone matched:
+  if (everyoneMatched && (room.activeSeat === room.lastRaiserIndex || (room.currentBet === 0 && attempts >= activeCount))) {
+      advancePhase(roomId);
+      return;
+  }
+
+  // Otherwise, give turn to next player
   room.activeSeat = nextSeat;
-  room.actionStartTime = Date.now();
+  room.actionStartTime = Date.now(); // Start Timer
   broadcastRoom(roomId);
 
+  // Auto-Fold Timer
   room.timerHandle = setTimeout(() => {
     const afkPlayerId = room.players[nextSeat].id;
+    console.log(`Auto-folding player ${afkPlayerId}`);
     processAction(roomId, afkPlayerId, { type: 'FOLD' });
   }, TURN_TIME);
 };
@@ -107,10 +124,12 @@ const advancePhase = (roomId: string) => {
   const room = rooms.get(roomId);
   if (!room) return;
 
+  // Reset bets for new round
   room.players.forEach(p => p.bet = 0);
   room.currentBet = 0;
   room.minRaise = 100;
   
+  // Reveal Cards based on phase
   if (room.phase === 'PRE_FLOP') {
     room.phase = 'FLOP';
     room.communityCards = [room.deck.pop()!, room.deck.pop()!, room.deck.pop()!];
@@ -126,9 +145,17 @@ const advancePhase = (roomId: string) => {
     return;
   }
 
-  room.activeSeat = (room.dealerIndex + 1) % room.players.length;
-  room.lastRaiserIndex = room.dealerIndex;
-  handleNextTurn(roomId);
+  // Reset turn to player left of dealer
+  let nextSeat = (room.dealerIndex + 1) % room.players.length;
+  while (room.players[nextSeat].isFolded || room.players[nextSeat].balance === 0) {
+      nextSeat = (nextSeat + 1) % room.players.length;
+  }
+  
+  room.activeSeat = nextSeat;
+  room.lastRaiserIndex = nextSeat; // Reset aggressor to first actor
+  room.actionStartTime = Date.now();
+  
+  broadcastRoom(roomId);
 };
 
 const evaluateWinners = (roomId: string) => {
@@ -138,10 +165,12 @@ const evaluateWinners = (roomId: string) => {
   const activePlayers = room.players.filter(p => !p.isFolded);
   
   if (activePlayers.length === 1) {
+    // Fold Win
     const winner = activePlayers[0];
     winner.balance += room.pot;
     room.messages.push({ user: 'SYSTEM', text: `${winner.name} wins $${room.pot.toLocaleString()} (Others Folded)`, timestamp: Date.now() });
   } else {
+    // Showdown
     const formatCard = (c: Card) => {
       const val = c.value === '10' ? 'T' : c.value[0];
       return val + c.suit[0].toLowerCase();
@@ -150,18 +179,18 @@ const evaluateWinners = (roomId: string) => {
     const community = room.communityCards.map(formatCard);
     const hands = activePlayers.map(p => {
       const fullHand = [...p.hand.map(formatCard), ...community];
-      return Hand.solve(fullHand, p.id);
+      return Hand.solve(fullHand, p.id); // Hand.solve returns object with .name (id) and .descr
     });
 
-    const winners = Hand.winners(hands);
-    const winnerIds = winners.map((w: any) => w.name);
-    const share = Math.floor(room.pot / winnerIds.length);
+    const winners = Hand.winners(hands); // Returns array of winning hands
+    const share = Math.floor(room.pot / winners.length);
 
-    winnerIds.forEach((id: string) => {
-      const player = room.players.find(p => p.id === id);
+    winners.forEach((w: any) => {
+      // pokersolver uses the 'name' property to store ID
+      const player = room.players.find(p => p.id === w.name); 
       if (player) {
         player.balance += share;
-        room.messages.push({ user: 'SYSTEM', text: `${player.name} wins $${share.toLocaleString()} with ${winners[0].descr}`, timestamp: Date.now() });
+        room.messages.push({ user: 'SYSTEM', text: `${player.name} wins $${share.toLocaleString()} with ${w.descr}`, timestamp: Date.now() });
       }
     });
   }
@@ -169,6 +198,7 @@ const evaluateWinners = (roomId: string) => {
   room.pot = 0;
   broadcastRoom(roomId);
 
+  // New Game Delay
   setTimeout(() => {
     room.phase = 'IDLE';
     room.communityCards = [];
@@ -181,8 +211,9 @@ const processAction = (roomId: string, playerId: string, action: { type: string,
   const room = rooms.get(roomId);
   if (!room || room.phase === 'IDLE' || room.phase === 'SHOWDOWN') return;
 
+  // STRICT TURN CHECK
   const player = room.players[room.activeSeat];
-  if (player.id !== playerId) return;
+  if (player.id !== playerId) return; 
 
   if (action.type === 'FOLD') {
     player.isFolded = true;
@@ -209,15 +240,8 @@ const processAction = (roomId: string, playerId: string, action: { type: string,
     room.pot += toPay;
     room.minRaise = raiseAmount;
     room.currentBet = totalNewBet;
-    room.lastRaiserIndex = room.activeSeat;
+    room.lastRaiserIndex = room.activeSeat; // Update aggressor
     room.messages.push({ user: 'SYSTEM', text: `${player.name} raises to $${totalNewBet.toLocaleString()}`, timestamp: Date.now() });
-  }
-
-  const notFolded = room.players.filter(p => !p.isFolded);
-  if (notFolded.length === 1) {
-    room.phase = 'SHOWDOWN';
-    evaluateWinners(roomId);
-    return;
   }
 
   handleNextTurn(roomId);
@@ -301,7 +325,7 @@ io.on('connection', (socket: Socket) => {
     room.minRaise = 100;
 
     room.activeSeat = (bbIndex + 1) % room.players.length;
-    room.lastRaiserIndex = bbIndex;
+    room.lastRaiserIndex = bbIndex; // Big Blind starts as aggressor
     
     handleNextTurn(roomId);
   });
