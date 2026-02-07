@@ -16,7 +16,7 @@ app.use(cors() as any);
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
 
-// [FIX] The 'as string' here fixes the Red Build Error
+// [FIX 1] Force TypeScript to treat these as strings
 const MONGO_URI = process.env.MONGO_URI as string;
 const REDIS_URL = process.env.REDIS_URL as string;
 
@@ -30,7 +30,7 @@ if (MONGO_URI) {
 }
 
 // 2. Connect Redis
-// [FIX] passing REDIS_URL explicitly as string
+// [FIX 2] Passing the variable we fixed above
 const redis = createClient({ url: REDIS_URL });
 
 redis.on('error', (err) => console.log('Redis Client Error', err));
@@ -40,7 +40,7 @@ redis.on('error', (err) => console.log('Redis Client Error', err));
         await redis.connect();
         console.log('✅ Redis Connected');
     } else {
-        console.error("⚠️ CRITICAL: REDIS_URL is missing! Game will crash.");
+        console.error("⚠️ CRITICAL: REDIS_URL is missing! Game will fail.");
     }
 })();
 
