@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
 import { createClient } from 'redis';
-import { PokerGame } from './engine/PokerGame'; // Ensure you created the engine folder!
+import { PokerGame } from './engine/PokerGame'; 
 import * as PokerSolver from 'pokersolver';
 
 const Hand = (PokerSolver as any).Hand;
@@ -16,19 +16,21 @@ app.use(cors() as any);
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
 
-// [FIX] Force TypeScript to treat MONGO_URI as a string
+// [FIX] The 'as string' here fixes the Red Build Error
 const MONGO_URI = process.env.MONGO_URI as string;
+const REDIS_URL = process.env.REDIS_URL as string;
 
+// 1. Connect MongoDB
 if (MONGO_URI) {
   mongoose.connect(MONGO_URI)
     .then(() => console.log('✅ Mongo Connected'))
     .catch(e => console.error('❌ Mongo Error', e));
 } else {
-  console.error("⚠️ CRITICAL: MONGO_URI is missing in Environment Variables.");
+  console.error("⚠️ CRITICAL: MONGO_URI is missing!");
 }
 
-// [FIX] Redis Connection
-const REDIS_URL = process.env.REDIS_URL as string;
+// 2. Connect Redis
+// [FIX] passing REDIS_URL explicitly as string
 const redis = createClient({ url: REDIS_URL });
 
 redis.on('error', (err) => console.log('Redis Client Error', err));
@@ -38,7 +40,7 @@ redis.on('error', (err) => console.log('Redis Client Error', err));
         await redis.connect();
         console.log('✅ Redis Connected');
     } else {
-        console.error("⚠️ CRITICAL: REDIS_URL is missing! Game will fail.");
+        console.error("⚠️ CRITICAL: REDIS_URL is missing! Game will crash.");
     }
 })();
 
