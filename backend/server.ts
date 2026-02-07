@@ -4,8 +4,8 @@ import { Server } from 'socket.io';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
-import { createClient } from 'redis'; // <-- PROOF: USING REDIS
-import { PokerGame } from './engine/PokerGame';
+import { createClient } from 'redis';
+import { PokerGame } from './engine/PokerGame'; // Ensure you created the engine folder!
 import * as PokerSolver from 'pokersolver';
 
 const Hand = (PokerSolver as any).Hand;
@@ -16,27 +16,41 @@ app.use(cors() as any);
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
 
-// [FIX] MONGO CONNECTION
+// [FIX] Force TypeScript to treat MONGO_URI as a string
 const MONGO_URI = process.env.MONGO_URI as string;
+
 if (MONGO_URI) {
   mongoose.connect(MONGO_URI)
     .then(() => console.log('✅ Mongo Connected'))
     .catch(e => console.error('❌ Mongo Error', e));
+} else {
+  console.error("⚠️ CRITICAL: MONGO_URI is missing in Environment Variables.");
 }
 
-// [FIX] REDIS CONNECTION
-// This is the line that makes it a "Pro System"
-const redis = createClient({ url: process.env.REDIS_URL });
-redis.on('error', (err) => console.log('Redis Client Error', err));
-redis.connect().then(() => console.log('✅ Redis Connected'));
+// [FIX] Redis Connection
+const REDIS_URL = process.env.REDIS_URL as string;
+const redis = createClient({ url: REDIS_URL });
 
-// Helper: Save game to Redis Cloud
+redis.on('error', (err) => console.log('Redis Client Error', err));
+
+(async () => {
+    if (REDIS_URL) {
+        await redis.connect();
+        console.log('✅ Redis Connected');
+    } else {
+        console.error("⚠️ CRITICAL: REDIS_URL is missing! Game will fail.");
+    }
+})();
+
+// Helper: Save game to Redis
 const saveGame = async (game: PokerGame) => {
+  if (!redis.isOpen) return;
   await redis.set(`poker:${game.state.id}`, JSON.stringify(game.state));
 };
 
-// Helper: Load game from Redis Cloud
+// Helper: Load game from Redis
 const loadGame = async (roomId: string): Promise<PokerGame | null> => {
+  if (!redis.isOpen) return null;
   const data = await redis.get(`poker:${roomId}`);
   if (!data) return null;
   return PokerGame.fromState(JSON.parse(data));
