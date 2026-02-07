@@ -1,282 +1,176 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Card, GameOutcome, GameStatus, PokerPlayer, PokerRoom, User, ChatMessage } from '../types';
 import PokerLobby from './PokerLobby';
 
-declare const Hand: any;
+const BACKEND_URL = 'https://gumble-backend.onrender.com';
 
 const SEAT_POSITIONS = [
-  { x: 50, y: 88 },  // 0: Bottom (You)
-  { x: 15, y: 75 },  // 1: Bottom Left
-  { x: 5, y: 50 },   // 2: Left
-  { x: 15, y: 25 },  // 3: Top Left
-  { x: 50, y: 12 },  // 4: Top
-  { x: 85, y: 25 },  // 5: Top Right
-  { x: 95, y: 50 },  // 6: Right
-  { x: 85, y: 75 },  // 7: Bottom Right
+  { top: '85%', left: '50%' }, 
+  { top: '75%', left: '15%' }, 
+  { top: '45%', left: '8%' },  
+  { top: '15%', left: '20%' }, 
+  { top: '10%', left: '50%' }, 
+  { top: '15%', left: '80%' }, 
+  { top: '45%', left: '92%' }, 
+  { top: '75%', left: '85%' }, 
 ];
 
-const SOCKET_URL = "https://gumble-backend.onrender.com";
-
-const PokerTable: React.FC<{ 
-  user: User, 
-  onGameEnd: (outcome: GameOutcome) => void, 
-  roomId: string, 
-  onNavigateToLobby: () => void 
-}> = ({ user, onGameEnd, roomId, onNavigateToLobby }) => {
+const PokerTable: React.FC<{ user: User, roomId: string, onExit: () => void, onGameEnd: (outcome: GameOutcome) => void }> = ({ user, roomId, onExit, onGameEnd }) => {
   const [room, setRoom] = useState<PokerRoom | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [inviteStatus, setInviteStatus] = useState<'IDLE' | 'COPIED'>('IDLE');
-  const [isLoading, setIsLoading] = useState(true);
-  const [winnerMessage, setWinnerMessage] = useState<string | null>(null);
-  const [showMobileChat, setShowMobileChat] = useState(false);
+  const [raiseAmount, setRaiseAmount] = useState(200);
   const socketRef = useRef<Socket | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const socket = io(SOCKET_URL, {
-      auth: { token: user.email },
-      transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
-      timeout: 10000, 
-    });
+    socketRef.current = io(BACKEND_URL, { reconnectionAttempts: 5, timeout: 10000 });
     
-    socketRef.current = socket;
-
-    socket.on('connect', () => {
-      socket.emit('join_room', { roomId, user });
+    socketRef.current.on('connect', () => {
+        socketRef.current?.emit('join_room', { roomId, user });
     });
 
-    socket.on('room_state', (updatedRoom: PokerRoom) => {
-      setRoom(updatedRoom);
-      setIsLoading(false);
-      if (updatedRoom.messages) setMessages(updatedRoom.messages);
-      if (updatedRoom.phase === 'SHOWDOWN') evaluateWinners(updatedRoom);
-      else setWinnerMessage(null);
+    socketRef.current.on('room_state', (state: PokerRoom) => {
+        setRoom(state);
+        
+        // MONEY FIX: Listen for system messages to award wins
+        if (state.messages && state.messages.length > 0) {
+            const lastMsg = state.messages[state.messages.length - 1];
+            if (lastMsg && lastMsg.user === 'SYSTEM' && lastMsg.text.includes(user.name) && lastMsg.text.includes('wins')) {
+                const amountMatch = lastMsg.text.match(/\$(\d+(?:,\d+)*)/);
+                if (amountMatch) {
+                    const amount = parseInt(amountMatch[1].replace(/,/g, ''));
+                    // Only trigger if we haven't processed this timestamp yet (simple dedupe)
+                    onGameEnd({ status: GameStatus.WON, amount: amount, message: lastMsg.text });
+                }
+            }
+        }
     });
 
-    socket.on('new_message', (msg: ChatMessage) => setMessages(prev => [...prev, msg]));
+    socketRef.current.on('game_msg', (msg: string) => alert(msg));
+    
+    return () => { socketRef.current?.disconnect(); };
+  }, [roomId, user, onGameEnd]);
 
-    socket.on('error', (msg: string) => { 
-        alert(msg); 
-        setIsLoading(false);
-        onNavigateToLobby(); 
-    });
+  const myPlayer = useMemo(() => room?.players.find(p => p.id === user.email), [room, user.email]);
+  const mySeat = myPlayer?.seat ?? 0;
 
-    return () => { 
-        socket.emit('leave_room', { roomId }); 
-        socket.disconnect(); 
-    };
-  }, [roomId, user.email, onNavigateToLobby]);
-
-  useEffect(() => {
-    if(showMobileChat) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, showMobileChat]);
-
-  const evaluateWinners = (currentRoom: PokerRoom) => {
-    try {
-      if (typeof Hand === 'undefined') return;
-      const activePlayers = currentRoom.players.filter(p => !p.isFolded);
-      const formatCard = (c: Card) => (c.value === '10' ? '10' : c.value[0]) + c.suit[0].toLowerCase();
-      const community = currentRoom.communityCards.map(formatCard);
-      const solvedHands = activePlayers.map(p => {
-        const fullHand = [...p.hand.map(formatCard), ...community];
-        return Hand.solve(fullHand, p.id);
-      });
-      const winners = Hand.winners(solvedHands);
-      if (winners.length > 0) {
-        const winningPlayer = activePlayers.find(p => p.id === winners[0].name);
-        setWinnerMessage(`${winningPlayer?.name} won with ${winners[0].descr}!`);
-        if (winners[0].name === user.email) onGameEnd({ status: GameStatus.WON, amount: currentRoom.pot, message: `Hand of the Dragon! ${winners[0].descr}` });
-      }
-    } catch (e) { console.error(e); }
+  const handleAction = (type: string, amount?: number) => {
+    socketRef.current?.emit('player_action', { roomId, playerId: user.email, action: { type, amount } });
   };
 
-  const handleAction = (type: 'FOLD' | 'CHECK' | 'CALL' | 'RAISE', amount = 0) => {
-    socketRef.current?.emit('player_action', { roomId, action: { type, amount } });
-  };
+  const handleStart = () => socketRef.current?.emit('start_game', { roomId });
 
-  const handleInvite = () => {
-    const url = `${window.location.origin}/#/table/${roomId}`;
-    navigator.clipboard.writeText(url);
-    setInviteStatus('COPIED');
-    setTimeout(() => setInviteStatus('IDLE'), 2000);
-  };
-
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim()) return;
-    socketRef.current?.emit('send_message', { roomId, user: user.name, text: newMessage });
-    setNewMessage('');
-  };
-
-  const getMySeatIndex = () => {
-    if (!room || !user) return -1;
-    return room.players.findIndex(p => p.id === user.email);
-  };
-
-  if (isLoading) return (
-    <div className="h-full w-full flex flex-col items-center justify-center gap-4">
-        <div className="w-16 h-16 border-4 border-luxury-gold/20 border-t-luxury-gold rounded-full animate-spin" />
-        <p className="font-cinzel text-luxury-gold animate-pulse tracking-widest">Connecting...</p>
-    </div>
-  );
-
-  const isMyTurn = room?.players[room.activeSeat]?.id === user.email && room.phase !== 'IDLE' && room.phase !== 'SHOWDOWN';
-  const mySeatIndex = getMySeatIndex();
-  
-  const visualPlayers = room?.players.map(p => {
-    const shift = mySeatIndex === -1 ? 0 : mySeatIndex;
-    return { ...p, visualSeat: (p.seat - shift + 8) % 8 };
-  });
+  if (!room) return <div className="h-full w-full flex items-center justify-center text-luxury-gold font-cinzel text-xl animate-pulse">CONNECTING TO TABLE...</div>;
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center p-2 md:p-8 animate-in fade-in">
-      <div className="relative w-full max-w-7xl aspect-video bg-[#1a1a1a] rounded-[30px] lg:rounded-[150px] border-4 lg:border-8 border-luxury-gold/20 shadow-2xl flex items-center justify-center select-none">
+    <div className="relative w-full h-full bg-luxury-black overflow-hidden flex items-center justify-center font-montserrat p-4">
+      <div className="relative w-full max-w-[95vw] aspect-[2/1] lg:aspect-[2.2/1] bg-[#071a0f] rounded-[500px] border-[12px] md:border-[24px] border-[#1a1a1a] shadow-[0_50px_100px_rgba(0,0,0,0.8),inset_0_0_150px_rgba(0,0,0,0.9)] flex items-center justify-center">
         
-        {/* Felt Background */}
-        <div className="absolute inset-2 lg:inset-4 rounded-[25px] lg:rounded-[140px] bg-[#0f3a20] shadow-[inset_0_0_50px_rgba(0,0,0,0.8)] border border-white/5 overflow-hidden">
-           <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/felt.png')] opacity-30 pointer-events-none" />
-        </div>
-
-        {/* Top Info Bar */}
-        <div className="absolute top-[8%] left-[5%] flex gap-2 z-[60]">
-           <button onClick={onNavigateToLobby} className="bg-red-900/50 px-3 py-1 rounded-full border border-red-500/20 text-[10px] md:text-xs text-red-200 uppercase font-bold hover:bg-red-900 shadow-lg cursor-pointer">Exit</button>
-           <div className="bg-black/40 px-3 py-1 rounded-full border border-white/10 flex items-center gap-2">
-              <span className="text-[10px] md:text-xs text-luxury-gold font-bold">ID: {room?.id}</span>
-              <button onClick={handleInvite} className="text-[10px] md:text-xs text-white hover:text-luxury-gold cursor-pointer">{inviteStatus === 'COPIED' ? '✓' : 'Inv'}</button>
-           </div>
-        </div>
-
-        {/* Pot and Info */}
-        <div className="absolute top-[22%] left-1/2 -translate-x-1/2 flex flex-col items-center z-10 w-full pointer-events-none">
-          <span className="text-[10px] text-luxury-gold/60 font-black tracking-[0.3em] uppercase mb-1">Total Pot</span>
-          <div className="bg-[#050505]/90 px-8 py-2 rounded-full border border-luxury-gold/50 text-luxury-gold font-cinzel font-bold text-xl md:text-2xl shadow-[0_0_30px_rgba(212,175,55,0.2)]">
-            ${room?.pot.toLocaleString()}
+        {/* Pot Hub */}
+        <div className="absolute top-[22%] left-1/2 -translate-x-1/2 flex flex-col items-center z-20">
+          <div className="bg-black/90 border border-luxury-gold/40 px-6 py-2 rounded-full flex items-center gap-3 shadow-2xl">
+            <div className="w-4 h-4 bg-luxury-gold rounded-full shadow-inner" />
+            <span className="text-luxury-gold font-cinzel font-black text-xl md:text-3xl">${room.pot.toLocaleString()}</span>
           </div>
-          {winnerMessage && <div className="mt-4 bg-luxury-gold text-black px-4 py-2 rounded font-bold text-xs animate-bounce whitespace-nowrap z-50 shadow-xl pointer-events-auto">{winnerMessage}</div>}
         </div>
 
-        {/* Community Cards - BIGGER CARDS [FIX] */}
-        <div className="absolute top-[45%] left-1/2 -translate-x-1/2 flex gap-2 z-10">
-           {room?.communityCards.map((c, i) => (
-             <div key={i} className="w-[12vw] max-w-[80px] md:max-w-[100px] aspect-[2/3] rounded bg-white shadow-xl animate-in zoom-in duration-300">
-                <img src={c.image} className="w-full h-full object-cover" />
-             </div>
-           ))}
-           {Array.from({ length: 5 - (room?.communityCards.length || 0) }).map((_, i) => (
-             <div key={i} className="w-[12vw] max-w-[80px] md:max-w-[100px] aspect-[2/3] rounded border border-white/10 bg-black/20" />
-           ))}
+        {/* Community Cards */}
+        <div className="absolute top-[42%] left-1/2 -translate-x-1/2 flex gap-1.5 md:gap-3 z-10 w-full justify-center">
+          {room.communityCards.map((c, i) => (
+            <div key={i} className="w-[10vw] h-[15vw] max-w-[100px] max-h-[140px] rounded-lg md:rounded-xl border border-white/20 shadow-2xl overflow-hidden animate-in zoom-in">
+              <img src={c.image} className="w-full h-full object-cover" />
+            </div>
+          ))}
+          {Array.from({ length: 5 - room.communityCards.length }).map((_, i) => (
+            <div key={i} className="w-[10vw] h-[15vw] max-w-[100px] max-h-[140px] rounded-lg md:rounded-xl border border-white/5 bg-black/30 backdrop-blur-sm" />
+          ))}
         </div>
 
-        {/* Seats */}
-        {SEAT_POSITIONS.map((pos, visualIndex) => {
-          const player = visualPlayers?.find(p => p.visualSeat === visualIndex);
-          const isActive = player && room?.activeSeat === player.seat && room?.phase !== 'IDLE' && room?.phase !== 'SHOWDOWN';
-          const isMe = player?.id === user.email;
-          const callAmount = player ? (room?.currentBet || 0) - player.bet : 0;
-          
+        {/* Players */}
+        {room.players.map((p) => {
+          const visualSeatIdx = (p.seat - mySeat + 8) % 8;
+          const pos = SEAT_POSITIONS[visualSeatIdx];
+          const isTurn = room.activeSeat === p.seat && room.phase !== 'IDLE' && room.phase !== 'SHOWDOWN';
+          const isMe = p.id === user.email;
+
           return (
-            <div key={visualIndex} className="absolute w-[16%] aspect-square flex flex-col items-center justify-center transition-all duration-500" 
-                 style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)' }}>
-              
-              {player ? (
-                <div className={`relative w-full h-full flex flex-col items-center ${isActive ? 'scale-110 z-30' : 'z-20'}`}>
-                  
-                  {/* TIMER BAR [FIX] */}
-                  {isActive && (
-                    <div className="absolute -bottom-4 w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-luxury-gold animate-[turnTimer_30s_linear_forwards]" />
-                    </div>
-                  )}
-
-                  {/* CALL AMOUNT BADGE [FIX] */}
-                  {isActive && callAmount > 0 && (
-                      <div className="absolute -right-8 top-0 bg-yellow-500 text-black text-[9px] font-bold px-2 py-1 rounded-full shadow-lg z-50 animate-bounce">
-                          CALL ${callAmount}
-                      </div>
-                  )}
-
-                  {/* Cards */}
-                  <div className="absolute -top-[40%] flex -space-x-4">
-                    {player.hand.length > 0 ? player.hand.map((c, idx) => (
-                      <div key={idx} className={`w-[60%] aspect-[2/3] bg-white rounded-md shadow-2xl transition-transform ${player.isFolded ? 'opacity-40 grayscale' : ''}`}>
-                        <img src={(isMe || room?.phase === 'SHOWDOWN') ? c.image : 'https://deckofcardsapi.com/static/img/back.png'} className="w-full h-full rounded-md object-cover" />
-                      </div>
-                    )) : <div className="w-[60%] aspect-[2/3] border border-white/10 rounded-md bg-black/20" />}
-                  </div>
-
-                  {/* Avatar */}
-                  <div className={`w-[65%] aspect-square rounded-full overflow-hidden border-2 bg-black ${isActive ? 'border-luxury-gold shadow-[0_0_20px_rgba(212,175,55,0.6)]' : 'border-white/20'}`}>
-                    <img src={player.avatar} className="w-full h-full object-cover" />
-                  </div>
-                  
-                  {/* Info */}
-                  <div className="mt-1 bg-black/80 backdrop-blur border border-white/10 rounded-md px-2 py-0.5 flex flex-col items-center min-w-[120%]">
-                    <span className="text-[10px] md:text-xs text-white font-bold truncate max-w-[60px]">{isMe ? 'YOU' : player.name}</span>
-                    <span className="text-[9px] md:text-xs text-luxury-gold font-black">${player.balance.toLocaleString()}</span>
-                  </div>
-                  {player.isDealer && <div className="absolute top-0 right-[5%] w-5 h-5 bg-white text-black rounded-full flex items-center justify-center font-black text-[10px] border border-black z-40 shadow-md">D</div>}
+            <div key={p.id} className="absolute flex flex-col items-center transition-all duration-700" style={{ top: pos.top, left: pos.left, transform: 'translate(-50%, -50%)' }}>
+              {room.currentBet > p.bet && !p.isFolded && room.activeSeat === p.seat && (
+                <div className="absolute -top-12 bg-red-600 px-3 py-1 rounded text-[10px] text-white font-black uppercase tracking-tighter animate-bounce z-30 shadow-lg">
+                  CALL ${room.currentBet - p.bet}
                 </div>
-              ) : (
-                <div className="w-10 h-10 rounded-full border-2 border-dashed border-white/10 flex items-center justify-center opacity-30"><span className="text-xs">+</span></div>
+              )}
+              <div className="flex -space-x-[30%] mb-2 md:mb-4">
+                {p.hand.length > 0 ? p.hand.map((c, idx) => (
+                  <div key={idx} className={`w-[12vw] h-[18vw] md:w-[8vw] md:h-[12vw] max-w-[120px] max-h-[180px] rounded-lg border-2 border-white/10 shadow-2xl overflow-hidden transform ${p.isFolded ? 'opacity-20 grayscale' : 'z-20'}`}>
+                    <img src={(isMe || room.phase === 'SHOWDOWN') ? c.image : 'https://deckofcardsapi.com/static/img/back.png'} className="w-full h-full object-cover" />
+                  </div>
+                )) : !p.isFolded && room.phase !== 'IDLE' && (
+                  <div className="flex -space-x-10">
+                    <div className="w-[12vw] h-[18vw] bg-black/40 rounded-lg border border-white/5" />
+                    <div className="w-[12vw] h-[18vw] bg-black/40 rounded-lg border border-white/5" />
+                  </div>
+                )}
+              </div>
+              <div className={`relative flex flex-col items-center bg-[#0a0a0a]/95 p-2 md:p-3 rounded-2xl border-2 transition-all duration-300 min-w-[100px] md:min-w-[160px] ${isTurn ? 'border-luxury-gold shadow-2xl scale-110' : 'border-white/5'}`}>
+                <div className="relative">
+                  <img src={p.avatar} className={`w-10 h-10 md:w-16 md:h-16 rounded-full border-2 ${isTurn ? 'border-luxury-gold' : 'border-white/10'}`} />
+                  {p.isDealer && <div className="absolute -right-1 -top-1 w-5 h-5 md:w-8 md:h-8 bg-white text-black text-[10px] font-black rounded-full flex items-center justify-center border border-black shadow-lg">D</div>}
+                </div>
+                <span className="text-[10px] md:text-sm text-white font-black mt-1 uppercase truncate max-w-[80px] md:max-w-[140px]">{isMe ? 'YOU' : p.name}</span>
+                <span className="text-[9px] md:text-xs text-luxury-gold font-bold">${p.balance.toLocaleString()}</span>
+                {isTurn && (
+                  <div className="absolute bottom-0 left-0 h-1 bg-luxury-gold rounded-full animate-[timer_30s_linear_forwards]" style={{ width: '100%' }} />
+                )}
+              </div>
+              {p.bet > 0 && (
+                <div className="mt-2 bg-luxury-black/80 border border-luxury-gold/30 px-3 py-1 rounded-full text-[10px] md:text-xs text-luxury-gold font-bold">
+                  ${p.bet.toLocaleString()}
+                </div>
               )}
             </div>
           );
         })}
       </div>
 
-      {isMyTurn && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 md:gap-4 bg-luxury-black/95 backdrop-blur-2xl p-4 md:p-6 rounded-[24px] md:rounded-[32px] border border-luxury-gold/30 shadow-2xl z-50 w-[95%] md:w-auto overflow-hidden">
-          <div className="pr-4 border-r border-white/10 mr-2 md:mr-4 hidden sm:block">
-            <span className="text-[8px] text-gray-500 uppercase font-black">Bet to Call</span>
-            <span className="text-sm md:text-xl text-white font-black italic block">${((room?.currentBet || 0) - (room?.players[room.activeSeat]?.bet || 0)).toLocaleString()}</span>
-          </div>
-          <div className="flex gap-2 flex-1">
-            <button onClick={() => socketRef.current?.emit('player_action', { roomId, action: { type: 'FOLD' } })} className="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 text-white font-black rounded-xl text-[8px] md:text-[10px] uppercase">Fold</button>
-            <button onClick={() => socketRef.current?.emit('player_action', { roomId, action: { type: 'CHECK' } })} className="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 text-white font-black rounded-xl text-[8px] md:text-[10px] uppercase">Check</button>
-            <button onClick={() => socketRef.current?.emit('player_action', { roomId, action: { type: 'CALL' } })} className="flex-[2] px-6 py-2.5 bg-luxury-gold text-luxury-black font-black rounded-xl text-[8px] md:text-[10px] uppercase gold-glow">
-                Call ${(room?.currentBet || 0) - (room?.players[room.activeSeat]?.bet || 0)}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Start Game Button */}
-      {room?.phase === 'IDLE' && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <button onClick={() => socketRef.current?.emit('start_game', { roomId })} disabled={room.players.length < 2} className="px-10 py-4 bg-luxury-gold text-black font-cinzel font-black text-lg md:text-2xl rounded-2xl shadow-2xl gold-glow hover:scale-105 transition-all disabled:opacity-30">
-            START GAME ({room.players.length}/2+)
+      {/* Control Panel */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[95%] max-w-4xl z-[100]">
+        {room.phase === 'IDLE' || room.phase === 'SHOWDOWN' ? (
+          <button onClick={handleStart} className="w-full py-5 bg-luxury-gold text-luxury-black font-cinzel font-black text-2xl rounded-2xl shadow-2xl gold-glow uppercase tracking-widest transition-transform active:scale-95">
+            DEAL NEW HAND
           </button>
-        </div>
-      )}
-
-      {/* Chat System */}
-      <button onClick={() => setShowMobileChat(!showMobileChat)} className="lg:hidden absolute bottom-6 right-6 w-12 h-12 bg-luxury-gold text-black rounded-full flex items-center justify-center shadow-2xl z-[150]">
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-      </button>
-
-      <div className={`absolute inset-y-0 right-0 w-80 bg-[#0f0f0f] border-l border-white/10 z-[140] transform transition-transform duration-300 shadow-2xl lg:relative lg:transform-none lg:flex flex-col ${showMobileChat ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}`}>
-         <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/20"><h3 className="font-cinzel text-luxury-gold text-sm tracking-widest">TABLE CHAT</h3><button onClick={() => setShowMobileChat(false)} className="lg:hidden text-gray-500 hover:text-white">✕</button></div>
-         <div className="flex-1 overflow-y-auto p-4 space-y-3">{messages.map((msg, i) => <div key={i} className="flex flex-col gap-1"><span className={`text-[10px] font-bold ${msg.user === 'SYSTEM' ? 'text-green-500' : 'text-luxury-gold'}`}>{msg.user}</span><p className="text-xs text-gray-300 bg-white/5 p-2 rounded break-words border border-white/5">{msg.text}</p></div>)}<div ref={chatEndRef} /></div>
-         <form onSubmit={handleSendMessage} className="p-4 border-t border-white/10 bg-black/40 flex gap-2">
-            <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="Type..." className="flex-1 bg-black border border-white/10 rounded px-3 py-2 text-xs text-white focus:border-luxury-gold outline-none" />
-            <button type="submit" className="bg-luxury-gold text-black px-3 py-2 rounded text-xs font-bold hover:bg-yellow-500">SEND</button>
-         </form>
+        ) : room.activeSeat === mySeat ? (
+          <div className="bg-[#050505]/98 p-4 md:p-8 rounded-[40px] border border-luxury-gold/30 shadow-2xl flex flex-col gap-4 animate-in slide-in-from-bottom-10">
+            <div className="flex justify-between items-center text-xs font-black uppercase text-gray-400 tracking-widest px-2">
+              <span>Bet: ${raiseAmount}</span>
+              <button onClick={onExit} className="text-red-500 underline">Exit Table</button>
+            </div>
+            <input type="range" min={room.currentBet + 100} max={myPlayer?.balance} step={50} value={raiseAmount} onChange={e => setRaiseAmount(parseInt(e.target.value))} className="w-full h-2 bg-luxury-gold/10 accent-luxury-gold rounded-full appearance-none cursor-pointer" />
+            <div className="flex gap-2 md:gap-4">
+              <button onClick={() => handleAction('FOLD')} className="flex-1 py-4 bg-white/5 border border-white/10 text-white font-black rounded-xl hover:bg-red-900/20 transition-all uppercase text-[10px]">Fold</button>
+              {room.currentBet === myPlayer?.bet ? (
+                <button onClick={() => handleAction('CHECK')} className="flex-1 py-4 bg-white/5 border border-white/10 text-white font-black rounded-xl hover:bg-white/10 transition-all uppercase text-[10px]">Check</button>
+              ) : (
+                <button onClick={() => handleAction('CALL')} className="flex-1 py-4 bg-luxury-gold text-luxury-black font-black rounded-xl uppercase text-[10px] shadow-lg">Call</button>
+              )}
+              <button onClick={() => handleAction('RAISE', raiseAmount)} className="flex-1 py-4 border-2 border-luxury-gold text-luxury-gold font-black rounded-xl uppercase text-[10px]">Raise</button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-black/90 px-12 py-4 rounded-full border border-luxury-gold/20 flex items-center justify-center gap-4 mx-auto w-fit shadow-2xl animate-pulse">
+            <div className="w-2 h-2 bg-luxury-gold rounded-full animate-ping" />
+            <span className="text-luxury-gold font-black text-xs uppercase tracking-[0.4em]">Waiting for Action...</span>
+          </div>
+        )}
       </div>
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes turnTimer { from { width: 100%; background-color: #d4af37; } to { width: 0%; background-color: #ef4444; } }
-      ` }} />
+      <style>{`@keyframes timer { from { width: 100%; } to { width: 0%; } }`}</style>
     </div>
   );
 };
 
-const Poker: React.FC<{ user: User, onGameEnd: (o: GameOutcome) => void }> = ({ user, onGameEnd }) => {
+const Poker: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => void }> = ({ user, onGameEnd }) => {
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  const handleCreateRoom = () => setActiveRoomId(Math.random().toString(36).substring(2, 8).toUpperCase());
-  const handleJoinRoom = (roomId: string) => setActiveRoomId(roomId);
-  return activeRoomId ? <PokerTable user={user} onGameEnd={onGameEnd} roomId={activeRoomId} onNavigateToLobby={() => setActiveRoomId(null)} /> : <PokerLobby onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />;
+  if (activeRoomId) return <PokerTable user={user} roomId={activeRoomId} onExit={() => setActiveRoomId(null)} onGameEnd={onGameEnd} />;
+  return <PokerLobby onCreateRoom={() => setActiveRoomId("ROYAL-777")} onJoinRoom={setActiveRoomId} />;
 };
 
 export default Poker;
