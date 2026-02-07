@@ -16,7 +16,7 @@ app.use(cors() as any);
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
 
-// [FIX 1] Force TypeScript to treat these as strings
+// [FIX] Force TypeScript to treat these as strings (Solves the Red Build Error)
 const MONGO_URI = process.env.MONGO_URI as string;
 const REDIS_URL = process.env.REDIS_URL as string;
 
@@ -30,7 +30,7 @@ if (MONGO_URI) {
 }
 
 // 2. Connect Redis
-// [FIX 2] Passing the variable we fixed above
+// [FIX] Using the typed variable here prevents the build crash
 const redis = createClient({ url: REDIS_URL });
 
 redis.on('error', (err) => console.log('Redis Client Error', err));
