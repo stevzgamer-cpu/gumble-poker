@@ -167,7 +167,7 @@ const PokerTable: React.FC<{ user: User, roomId: string, onExit: () => void, onG
 const Poker: React.FC<{ user: User, onGameEnd: (outcome: GameOutcome) => void }> = ({ user, onGameEnd }) => {
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   if (activeRoomId) return <PokerTable user={user} roomId={activeRoomId} onExit={() => setActiveRoomId(null)} onGameEnd={onGameEnd} />;
-  return <PokerLobby onCreateRoom={() => setActiveRoomId("ROYAL-777")} onJoinRoom={setActiveRoomId} />;
+  return <PokerLobby onCreateRoom={() => setActiveRoomId("ROYAL-778")} onJoinRoom={setActiveRoomId} />;
 };
 
 export default Poker;
