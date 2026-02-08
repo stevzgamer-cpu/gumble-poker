@@ -19,78 +19,83 @@ const io = new Server(httpServer, { cors: { origin: "*" } });
 const MONGO_URI = (process.env.MONGO_URI || "") as string;
 const REDIS_URL = (process.env.REDIS_URL || "") as string;
 
-// 1. Connect MongoDB
-if (MONGO_URI) {
-  mongoose.connect(MONGO_URI)
-    .then(() => console.log('✅ Mongo Connected'))
-    .catch(e => console.error('❌ Mongo Error', e));
-} else {
-  console.log("⚠️ MONGO_URI missing");
-}
+// DB Connections
+if (MONGO_URI) mongoose.connect(MONGO_URI).then(() => console.log('✅ Mongo Connected')).catch(e => console.error(e));
 
-// 2. Connect Redis
 const redis = createClient({ 
     url: REDIS_URL,
-    socket: {
-        tls: true,
-        rejectUnauthorized: false
-    }
+    socket: { tls: true, rejectUnauthorized: false }
 });
-
-redis.on('error', (err) => console.log('Redis Client Error', err));
-
-(async () => {
-    if (REDIS_URL) {
-        await redis.connect();
-        console.log('✅ Redis Connected');
-    } else {
-        console.log("⚠️ REDIS_URL missing");
-    }
-})();
+redis.on('error', (err) => console.log('Redis Error', err));
+(async () => { if (REDIS_URL) await redis.connect(); })();
 
 // Helper: Save game to Redis
 const saveGame = async (game: PokerGame) => {
   if (!redis.isOpen) return;
-  const key = `poker:${game.state.id}`;
-  // [FIX] Use the new toState() method to save the 'playersActed' list
-  await redis.set(key, JSON.stringify(game.toState()));
+  await redis.set(`poker:${game.state.id}`, JSON.stringify(game.toState()));
 };
 
 // Helper: Load game from Redis
 const loadGame = async (roomId: string): Promise<PokerGame | null> => {
   if (!redis.isOpen) return null;
-  const key = `poker:${roomId}`;
-  
-  // [FIX] This is the line causing your build error.
-  // We force the result to be treated as a string.
-  const data = (await redis.get(key)) as string;
-  
+  const data = (await redis.get(`poker:${roomId}`)) as string;
   if (!data) return null;
-  
-  // Now JSON.parse is happy because 'data' is definitely a string
   return PokerGame.fromState(JSON.parse(data));
+};
+
+// [FEATURE] 15 Second Timer Map
+const turnTimers = new Map<string, NodeJS.Timeout>();
+
+const startTurnTimer = (roomId: string, game: PokerGame) => {
+    if (turnTimers.has(roomId)) clearTimeout(turnTimers.get(roomId));
+    
+    // 15 Seconds Limit
+    const timer = setTimeout(async () => {
+        const freshGame = await loadGame(roomId);
+        if (freshGame) {
+            freshGame.handleTimeout(); // Auto Fold/Check
+            
+            // Check win condition after timeout action
+             if (freshGame.state.phase === 'SHOWDOWN' || freshGame.state.players.filter(p => !p.isFolded).length === 1) {
+                await handleWin(freshGame, roomId);
+            } else {
+                startTurnTimer(roomId, freshGame); // Restart for next player
+                await saveGame(freshGame);
+                io.to(roomId).emit('room_state', freshGame.state);
+            }
+        }
+    }, 15000);
+
+    turnTimers.set(roomId, timer);
 };
 
 io.on('connection', (socket) => {
   
   socket.on('join_room', async ({ roomId, user }) => {
     socket.join(roomId);
-    
     let game = await loadGame(roomId);
-    if (!game) {
-      game = new PokerGame(roomId); 
-    }
+    if (!game) game = new PokerGame(roomId); 
     
     game.addPlayer(user, socket.id);
     await saveGame(game);
     io.to(roomId).emit('room_state', game.state);
   });
 
+  socket.on('leave_room', async ({ roomId, userId }) => {
+    const game = await loadGame(roomId);
+    if (!game) return;
+    
+    game.removePlayer(userId);
+    await saveGame(game);
+    socket.leave(roomId);
+    io.to(roomId).emit('room_state', game.state);
+  });
+
   socket.on('start_game', async ({ roomId }) => {
     const game = await loadGame(roomId);
     if (!game) return;
-
     game.startGame();
+    startTurnTimer(roomId, game);
     await saveGame(game);
     io.to(roomId).emit('room_state', game.state);
   });
@@ -102,8 +107,10 @@ io.on('connection', (socket) => {
     const success = game.processAction(playerId, action);
     if (success) {
       if (game.state.phase === 'SHOWDOWN' || game.state.players.filter(p => !p.isFolded).length === 1) {
+         if (turnTimers.has(roomId)) clearTimeout(turnTimers.get(roomId));
          await handleWin(game, roomId);
       } else {
+         startTurnTimer(roomId, game);
          await saveGame(game);
          io.to(roomId).emit('room_state', game.state);
       }
@@ -118,10 +125,11 @@ async function handleWin(game: PokerGame, roomId: string) {
   if (active.length === 1) {
     winners = [{ name: active[0].id, descr: 'Opponents Folded' }];
   } else {
+    // [FEATURE] Enhanced Hand Description
     const hands = active.map(p => {
        const fmt = p.hand.map(c => (c.value == '10' ? 'T' : c.value[0]) + c.suit[0].toLowerCase());
        const comm = game.state.communityCards.map(c => (c.value == '10' ? 'T' : c.value[0]) + c.suit[0].toLowerCase());
-       return Hand.solve([...fmt, ...comm], p.id);
+       return Hand.solve([...fmt, ...comm], p.id); // Returns object with .name (Hand Rank) and .descr (Description)
     });
     winners = Hand.winners(hands);
   }
@@ -129,10 +137,12 @@ async function handleWin(game: PokerGame, roomId: string) {
   const share = Math.floor(game.state.pot / winners.length);
   
   for (const w of winners) {
-     const player = game.state.players.find(p => p.id === w.name || p.id === w.id);
+     const player = game.state.players.find(p => p.id === w.name || p.id === w.id); // pokersolver uses name as ID usually
      if (player) {
         player.balance += share;
-        const msg = { user: 'SYSTEM', text: `${player.name} wins $${share.toLocaleString()} (${w.descr || 'Fold'})`, timestamp: Date.now() };
+        // [FEATURE] System Message for Win
+        const winText = active.length === 1 ? 'wins by Fold' : `wins with ${w.descr}`;
+        const msg = { user: 'SYSTEM', text: `${player.name} wins $${share.toLocaleString()} (${winText})`, timestamp: Date.now() };
         game.state.messages.push(msg);
      }
   }
