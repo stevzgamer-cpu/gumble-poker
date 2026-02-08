@@ -16,9 +16,9 @@ app.use(cors() as any);
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
 
-// [FIX] Force TypeScript to treat these as strings (Solves the Red Build Error)
-const MONGO_URI = process.env.MONGO_URI as string;
-const REDIS_URL = process.env.REDIS_URL as string;
+// [FIX] The 'as string' forces TypeScript to accept these variables
+const MONGO_URI = (process.env.MONGO_URI || "") as string;
+const REDIS_URL = (process.env.REDIS_URL || "") as string;
 
 // 1. Connect MongoDB
 if (MONGO_URI) {
@@ -26,12 +26,18 @@ if (MONGO_URI) {
     .then(() => console.log('✅ Mongo Connected'))
     .catch(e => console.error('❌ Mongo Error', e));
 } else {
-  console.error("⚠️ CRITICAL: MONGO_URI is missing!");
+  console.log("⚠️ MONGO_URI missing");
 }
 
 // 2. Connect Redis
-// [FIX] Using the typed variable here prevents the build crash
-const redis = createClient({ url: REDIS_URL });
+// [FIX] We use the forced string variable here
+const redis = createClient({ 
+    url: REDIS_URL,
+    socket: {
+        tls: true,
+        rejectUnauthorized: false
+    }
+});
 
 redis.on('error', (err) => console.log('Redis Client Error', err));
 
@@ -40,7 +46,7 @@ redis.on('error', (err) => console.log('Redis Client Error', err));
         await redis.connect();
         console.log('✅ Redis Connected');
     } else {
-        console.error("⚠️ CRITICAL: REDIS_URL is missing! Game will fail.");
+        console.log("⚠️ REDIS_URL missing");
     }
 })();
 
@@ -88,8 +94,6 @@ io.on('connection', (socket) => {
 
     const success = game.processAction(playerId, action);
     if (success) {
-      
-      // Check for Winner
       if (game.state.phase === 'SHOWDOWN' || game.state.players.filter(p => !p.isFolded).length === 1) {
          await handleWin(game, roomId);
       } else {
