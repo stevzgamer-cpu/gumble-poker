@@ -52,8 +52,8 @@ redis.on('error', (err) => console.log('Redis Client Error', err));
 const saveGame = async (game: PokerGame) => {
   if (!redis.isOpen) return;
   const key = `poker:${game.state.id}`;
-  // [FIX] We force the key to be a string to be safe
-  await redis.set(key, JSON.stringify(game.state));
+  // [FIX] Use the new toState() method to save the 'playersActed' list
+  await redis.set(key, JSON.stringify(game.toState()));
 };
 
 // Helper: Load game from Redis
