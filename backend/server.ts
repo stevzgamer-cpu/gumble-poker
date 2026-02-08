@@ -16,7 +16,6 @@ app.use(cors() as any);
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
 
-// [FIX] The 'as string' forces TypeScript to accept these variables
 const MONGO_URI = (process.env.MONGO_URI || "") as string;
 const REDIS_URL = (process.env.REDIS_URL || "") as string;
 
@@ -30,7 +29,6 @@ if (MONGO_URI) {
 }
 
 // 2. Connect Redis
-// [FIX] We use the forced string variable here
 const redis = createClient({ 
     url: REDIS_URL,
     socket: {
@@ -53,14 +51,23 @@ redis.on('error', (err) => console.log('Redis Client Error', err));
 // Helper: Save game to Redis
 const saveGame = async (game: PokerGame) => {
   if (!redis.isOpen) return;
-  await redis.set(`poker:${game.state.id}`, JSON.stringify(game.state));
+  const key = `poker:${game.state.id}`;
+  // [FIX] We force the key to be a string to be safe
+  await redis.set(key, JSON.stringify(game.state));
 };
 
 // Helper: Load game from Redis
 const loadGame = async (roomId: string): Promise<PokerGame | null> => {
   if (!redis.isOpen) return null;
-  const data = await redis.get(`poker:${roomId}`);
+  const key = `poker:${roomId}`;
+  
+  // [FIX] This is the line causing your build error.
+  // We force the result to be treated as a string.
+  const data = (await redis.get(key)) as string;
+  
   if (!data) return null;
+  
+  // Now JSON.parse is happy because 'data' is definitely a string
   return PokerGame.fromState(JSON.parse(data));
 };
 
